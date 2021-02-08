@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-# python mi.py data_file
+# python mink.py data_file
 #
 # Performs multiple data imputation for timestamped mobile sensor data.
 # Data are assumed to be sampled at 1Hz and all sensor readings are available
@@ -26,10 +26,10 @@ def get_datetime(date, time):
     YYYY-MM-DD HH:MM:SS.ms. This function converts the two strings to a single
     datetime.datetime() object.
     """
-    str = date + ' ' + time
-    if '.' in str:  # Remove optional millsecond precision
-        str = str.split('.', 1)[0]
-    dt = datetime.strptime(str, "%Y-%m-%d %H:%M:%S")
+    stamp = date + ' ' + time
+    if '.' in stamp:  # Remove optional millsecond precision
+        stamp = stamp.split('.', 1)[0]
+    dt = datetime.strptime(stamp, "%Y-%m-%d %H:%M:%S")
     return dt
 
 
@@ -138,10 +138,10 @@ def report_data(filename, data, start):
 
 
 def evaluate(fulldata, imputted_data, missing):
-    min_values = np.zeros((num_sensors))
-    max_values = np.zeros((num_sensors))
-    mae_values = np.zeros((num_sensors))
-    denominators = np.zeros((num_sensors))
+    min_values = np.zeros(num_sensors)
+    max_values = np.zeros(num_sensors)
+    mae_values = np.zeros(num_sensors)
+    denominators = np.zeros(num_sensors)
     num_missing = len(missing)
     for i in range(num_sensors):
         field = [column[i + 1] for column in fulldata]  # ignore field 0 of fulldata
