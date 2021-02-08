@@ -1,6 +1,6 @@
 # MINK
 
-**M**issing data **I**mputation **N**ovel **T**oolkit
+**M**issing data **I**mputation **N**ovel tool**K**it
 
 MINK performs multiple data imputation for timestamped mobile sensor data.
 Data are assumed to be sampled at 1Hz and all sensor readings are available for each available
