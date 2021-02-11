@@ -12,6 +12,7 @@
 # Code and data may not be used or distributed without permission from WSU.
 
 
+import argparse
 import sys
 from datetime import datetime, timedelta
 
@@ -21,6 +22,13 @@ import numpy as np
 class MINK:
     def __init__(self):
         self.num_sensors = 16
+        self._impute_methods = ['field_mean',
+                                'carry_forward',
+                                'carry_backward',
+                                'carry_average']
+        self._config_method = None
+        self._config_datafile = None
+        self._config_fulldatafile = None
         return
 
     @staticmethod
@@ -112,7 +120,8 @@ class MINK:
             start += timedelta(0, 1)
         return newdata, data[0][0], missing
 
-    def report_data(self, filename: str, data: list, start: datetime):
+    @staticmethod
+    def report_data(filename: str, data: list, start: datetime):
         outfile = open(filename + ".complete", "w")
         n = len(data)
         for i in range(n):
@@ -163,29 +172,51 @@ class MINK:
             print("Normalized MAE:", np.sum(mae_values) / float(self.num_sensors))
         return
 
-    def run(self, datafile: str, fulldatafile: str = None):
-        data = self.read_data(datafile=datafile)
+    def run(self):
+        # Run the command line parser.
+        self.run_config()
+
+        # Now we can do the work.
+        data = self.read_data(datafile=self._config_datafile)
         num_seconds = self.report_data_statistics(data=data)
         newdata, start, missing = self.impute_missing_values(data=data,
                                                              num_seconds=num_seconds)
-        self.report_data(filename=datafile,
+        self.report_data(filename=self._config_datafile,
                          data=newdata,
                          start=start)
 
-        if fulldatafile is not None:
-            fulldata = self.read_data(datafile=fulldatafile)
+        if self._config_fulldatafile is not None:
+            fulldata = self.read_data(datafile=self._config_fulldatafile)
             self.evaluate(fulldata=fulldata,
                           imputted_data=newdata,
                           missing=missing)
         return
 
+    def run_config(self):
+        parser = argparse.ArgumentParser(description='Missing data Imputation Novel toolKit.')
+        parser.add_argument('--method',
+                            dest='method',
+                            choices=self._impute_methods,
+                            required=True,
+                            help='Choose the method to use when imputing the missing data values.')
+        parser.add_argument('--data',
+                            dest='data',
+                            type=str,
+                            required=True,
+                            help='The data file with missing data to impute.')
+        parser.add_argument('--fulldata',
+                            dest='fulldata',
+                            type=str,
+                            help=('The complete data file to run calculations against the '
+                                  'imputed data.'))
+        args = parser.parse_args()
+
+        self._config_method = args.method
+        self._config_datafile = args.data
+        self._config_fulldatafile = args.fulldata
+        return
+
 
 if __name__ == "__main__":
     worker = MINK()
-    if len(sys.argv) > 2:
-        worker.run(datafile=sys.argv[1],
-                   fulldatafile=sys.argv[2])
-    elif len(sys.argv) > 1:
-        worker.run(datafile=sys.argv[1])
-    else:
-        print('ERROR:  Please provide a data file to process.')
+    worker.run()
