@@ -13,7 +13,7 @@
 
 
 import argparse
-import sys
+import copy
 from datetime import datetime, timedelta
 
 import numpy as np
@@ -22,13 +22,21 @@ import numpy as np
 class MINK:
     def __init__(self):
         self.num_sensors = 16
-        self._impute_methods = ['field_mean',
-                                'carry_forward',
-                                'carry_backward',
-                                'carry_average']
+        self._impute_field_mean = 'field_mean'
+        self._impute_carry_forward = 'carry_forward'
+        self._impute_carry_backward = 'carry_backward'
+        self._impute_carry_average = 'carry_average'
+        self._impute_functions = dict({
+            self._impute_field_mean: self._impute_func_field_mean,
+            self._impute_carry_forward: self._impute_func_carry_forward,
+            self._impute_carry_backward: self._impute_func_carry_backward,
+            self._impute_carry_average: self._impute_func_carry_average})
+        self._impute_methods = list(self._impute_functions.keys())
+        self._impute_methods.sort()
         self._config_method = None
         self._config_datafile = None
         self._config_fulldatafile = None
+        self.impute_func = self.impute_missing_values
         return
 
     @staticmethod
@@ -97,28 +105,172 @@ class MINK:
         return int(num_seconds)
 
     def impute_missing_values(self, data: list, num_seconds: int) -> (list, datetime, list):
+        newdata = list([self.num_sensors])
+        dt = datetime.now()
+        missing = list()
+
+        return newdata, dt, missing
+
+    @staticmethod
+    def _get_data_segments(data: list) -> list:
+        segments = list()
+
+        # Initialize variables for our loop.
+        new_segment = dict({'first_index': 0,
+                            'last_index': 0})
+        one_second = timedelta(seconds=1)
+        for i in range(1, len(data)):
+            # If the previous stamp is more than one second behind the current one, then we have
+            # a gap that needs to be filled.  i-1 is the end of the previous segment and i is the
+            # start of the current segment.
+            if (data[i-1][0] + one_second) < data[i][0]:
+                new_segment['last_index'] = i-1
+                segments.append(copy.deepcopy(new_segment))
+                del new_segment
+                new_segment = dict({'first_index': i,
+                                    'last_index': i})
+        # We need to set the end of the final segment (even if it's the only segment) and add
+        # it to the list.
+        new_segment['last_index'] = len(data) - 1
+        segments.append(copy.deepcopy(new_segment))
+
+        # Return the calculated segments.
+        return segments
+
+    def _impute_func_field_mean(self, data: list, num_seconds: int) -> (list, datetime, list):
+        # print('first = {}'.format(str(data[0][0])))
+        # print('last  = {}'.format(str(data[-1][0])))
+        newdata = list()
+        missing = list()
+
+        # Build a numpy array of the mean of each field
         means = np.zeros((self.num_sensors + 1))
-        missing = []
         for i in range(1, self.num_sensors):
             field = [column[i] for column in data]
             means[i] = np.mean(field)
-        newdata = []
+
+        # Start processing the data
         start = data[0][0]
         index = 0
         while len(newdata) <= num_seconds:
-            newpoint = []
+            newpoint = list()
+            # print('index = {}  start = {}  data[index][0] = {}'.format(index,
+            #                                                            str(start),
+            #                                                            str(data[index][0])))
             if start < data[index][0]:
                 for i in range(1, self.num_sensors + 1):
                     newpoint.append(means[i])
                     if i == 1:
                         missing.append(len(newdata))
+                # print('newpoint = {}'.format(str(newpoint)))
+                # print('missing = {}'.format(str(missing)))
             else:
                 for i in range(1, self.num_sensors + 1):
                     newpoint.append(data[index][i])
                 index += 1
+                # print('newpoint = {}'.format(str(newpoint)))
             newdata.append(newpoint)
             start += timedelta(0, 1)
-        return newdata, data[0][0], missing
+        dt = data[0][0]
+        return newdata, dt, missing
+
+    def _populate_from_gap_values(self, data: list, num_seconds: int, segments: list,
+                                  gap_values: list) -> (list, datetime, list):
+        newdata = list()
+        missing = list()
+
+        # Start processing the data
+        data_index = 0
+        segment_index = 0
+        gap_index = 0
+        waiting_for_gap = True
+        current_stamp = data[0][0]
+        end_stamp = data[0][0]
+        one_second = timedelta(seconds=1)
+        while len(newdata) <= num_seconds:
+            # print('dind={}  sind={}  gind={}  wait={}  curstm={}  end_stm={}'
+            #       .format(data_index,
+            #               segment_index,
+            #               gap_index,
+            #               waiting_for_gap,
+            #               current_stamp,
+            #               end_stamp))
+            newpoint = list()
+            if waiting_for_gap:
+                if data_index >= segments[segment_index]['last_index']:
+                    if segment_index < (len(segments) - 1):
+                        waiting_for_gap = False
+                        segment_index += 1
+                        current_stamp = copy.deepcopy(data[data_index][0]) + one_second
+                        end_stamp = copy.deepcopy(data[data_index + 1][0])
+                for i in range(1, self.num_sensors + 1):
+                    newpoint.append(data[data_index][i])
+                data_index += 1
+            else:
+                if current_stamp < end_stamp:
+                    for i in range(self.num_sensors):
+                        newpoint.append(gap_values[gap_index][i])
+                    missing.append(len(newdata))
+                    current_stamp += one_second
+                if current_stamp >= end_stamp:
+                    waiting_for_gap = True
+                    gap_index += 1
+            newdata.append(newpoint)
+        dt = data[0][0]
+        return newdata, dt, missing
+
+    def _impute_func_carry_forward(self, data: list, num_seconds: int) -> (list, datetime, list):
+        segments = self._get_data_segments(data=data)
+        gap_values = list()
+        for i in range(1, len(segments)):
+            sensor_values = list()
+            for s in range(1, self.num_sensors + 1):
+                value = data[segments[i - 1]['last_index']][s]
+                sensor_values.append(value)
+            gap_values.append(copy.deepcopy(sensor_values))
+            del sensor_values
+
+        newdata, dt, missing = self._populate_from_gap_values(data=data,
+                                                              num_seconds=num_seconds,
+                                                              segments=segments,
+                                                              gap_values=gap_values)
+        return newdata, dt, missing
+
+    def _impute_func_carry_backward(self, data: list, num_seconds: int) -> (list, datetime, list):
+        segments = self._get_data_segments(data=data)
+        gap_values = list()
+        for i in range(1, len(segments)):
+            sensor_values = list()
+            for s in range(1, self.num_sensors + 1):
+                value = data[segments[i]['first_index']][s]
+                sensor_values.append(value)
+            gap_values.append(copy.deepcopy(sensor_values))
+            del sensor_values
+
+        newdata, dt, missing = self._populate_from_gap_values(data=data,
+                                                              num_seconds=num_seconds,
+                                                              segments=segments,
+                                                              gap_values=gap_values)
+        return newdata, dt, missing
+
+    def _impute_func_carry_average(self, data: list, num_seconds: int) -> (list, datetime, list):
+        segments = self._get_data_segments(data=data)
+        gap_values = list()
+        for i in range(1, len(segments)):
+            sensor_values = list()
+            for s in range(1, self.num_sensors + 1):
+                value = data[segments[i - 1]['last_index']][s] \
+                        + data[segments[i]['first_index']][s]
+                value = float(value) / 2.0
+                sensor_values.append(value)
+            gap_values.append(copy.deepcopy(sensor_values))
+            del sensor_values
+
+        newdata, dt, missing = self._populate_from_gap_values(data=data,
+                                                              num_seconds=num_seconds,
+                                                              segments=segments,
+                                                              gap_values=gap_values)
+        return newdata, dt, missing
 
     @staticmethod
     def report_data(filename: str, data: list, start: datetime):
@@ -126,6 +278,7 @@ class MINK:
         n = len(data)
         for i in range(n):
             newtime = start + timedelta(0, i)
+            # print('{}  {}'.format(str(newtime), str(data[i])))
             dtstr = newtime.strftime("%Y-%m-%d %H:%M:%S")
             outstr = dtstr + " Yaw Yaw " + str(data[i][0]) + " 0\n"
             outstr += dtstr + " Pitch Pitch " + str(data[i][1]) + " 0\n"
@@ -179,8 +332,8 @@ class MINK:
         # Now we can do the work.
         data = self.read_data(datafile=self._config_datafile)
         num_seconds = self.report_data_statistics(data=data)
-        newdata, start, missing = self.impute_missing_values(data=data,
-                                                             num_seconds=num_seconds)
+        newdata, start, missing = self.impute_func(data=data,
+                                                   num_seconds=num_seconds)
         self.report_data(filename=self._config_datafile,
                          data=newdata,
                          start=start)
@@ -214,6 +367,7 @@ class MINK:
         self._config_method = args.method
         self._config_datafile = args.data
         self._config_fulldatafile = args.fulldata
+        self.impute_func = self._impute_functions[self._config_method]
         return
 
 
