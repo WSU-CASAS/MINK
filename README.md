@@ -9,6 +9,7 @@ timestamp.
 
 #### Requirements
 *numpy*
+*scikit-learn*
 
 
 ## Running
