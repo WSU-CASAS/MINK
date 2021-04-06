@@ -13,15 +13,19 @@
 
 
 import argparse
+import collections
 import copy
 from datetime import datetime, timedelta
 
 import numpy as np
+from mobiledata import MobileData
 
 
 class MINK:
     def __init__(self):
+        self.data_fields = collections.OrderedDict()
         self.num_sensors = 16
+        self.event_spacing = timedelta(seconds=1.0)
         self._impute_field_mean = 'field_mean'
         self._impute_carry_forward = 'carry_forward'
         self._impute_carry_backward = 'carry_backward'
@@ -39,55 +43,27 @@ class MINK:
         self.impute_func = self.impute_missing_values
         return
 
-    @staticmethod
-    def get_datetime(date: str, time: str) -> datetime:
-        """ Input is two strings representing a date and a time with the format
-        YYYY-MM-DD HH:MM:SS.ms. This function converts the two strings to a single
-        datetime.datetime() object.
-        """
-        stamp = date + ' ' + time
-        if '.' in stamp:  # Remove optional millisecond precision
-            stamp = stamp.split('.', 1)[0]
-        dt = datetime.strptime(stamp, "%Y-%m-%d %H:%M:%S")
-        return dt
-
-    @staticmethod
-    def read_entry(infile):
-        """ Parse a single line from a text file containing a sensor reading.
-        The format is "date time sensorname sensorname value <activitylabel|0>".
-        """
-        try:
-            line = infile.readline()
-            x = str(str(line).strip()).split(' ', 5)
-            if len(x) < 6:
-                return True, x[0], x[1], x[2], x[3], x[4], 'None'
-            else:
-                x[5] = x[5].replace(' ', '_')
-                return True, x[0], x[1], x[2], x[3], x[4], x[5]
-        except:
-            return False, None, None, None, None, None, None
-
     def read_data(self, datafile: str) -> list:
         """ Read and store sensor data from specified file. Assume that each reported
         time contains readings for all 16 sensors: yaw, pitch, roll, x/y/z rotation,
         x/y/z acceleration, latitude, longitude, altitude, course, speed,
         horizontal accuracy, and vertical accuracy.
         """
-        infile = open(datafile, "r")
-        valid, date, time, f1, f2, v1, v2 = self.read_entry(infile)
-        count = 0
-        data = list()
-        valid = True
-        while valid:
-            datapoint = []
-            dt = self.get_datetime(date, time)
-            datapoint.append(dt)
-            while count < 16:
-                datapoint.append(float(v1))
-                valid, date, time, f1, f2, v1, v2 = self.read_entry(infile)
-                count += 1
-            data.append(datapoint)
-            count = 0
+        with MobileData(file_path=datafile, mode='r') as in_data:
+            self.data_fields = copy.deepcopy(in_data.fields)
+            data = in_data.read_all_rows()
+
+            # Count the number of sensors.
+            self.num_sensors = 0
+            for field_name, field_type in self.data_fields.items():
+                if field_type == 'f':
+                    self.num_sensors += 1
+
+            # Estimate the sample spacing.
+            if len(data) > 11:
+                start_stamp = data[0][0]
+                end_stamp = data[10][0]
+                self.event_spacing = abs(end_stamp - start_stamp) / 10.0
         return data
 
     @staticmethod
@@ -117,7 +93,9 @@ class MINK:
 
         # Initialize variables for our loop.
         new_segment = dict({'first_index': 0,
-                            'last_index': 0})
+                            'last_index': 0,
+                            'first_stamp': copy.deepcopy(data[0][0]),
+                            'last_stamp': copy.deepcopy(data[-1][0])})
         one_second = timedelta(seconds=1)
         for i in range(1, len(data)):
             # If the previous stamp is more than one second behind the current one, then we have
@@ -125,13 +103,17 @@ class MINK:
             # start of the current segment.
             if (data[i-1][0] + one_second) < data[i][0]:
                 new_segment['last_index'] = i-1
+                new_segment['last_stamp'] = copy.deepcopy(data[i-1][0])
                 segments.append(copy.deepcopy(new_segment))
                 del new_segment
                 new_segment = dict({'first_index': i,
-                                    'last_index': i})
+                                    'last_index': i,
+                                    'first_stamp': copy.deepcopy(data[i][0]),
+                                    'last_stamp': copy.deepcopy(data[i][0])})
         # We need to set the end of the final segment (even if it's the only segment) and add
         # it to the list.
         new_segment['last_index'] = len(data) - 1
+        new_segment['last_stamp'] = copy.deepcopy(data[-1][0])
         segments.append(copy.deepcopy(new_segment))
 
         # Return the calculated segments.
@@ -186,7 +168,7 @@ class MINK:
         waiting_for_gap = True
         current_stamp = data[0][0]
         end_stamp = data[0][0]
-        one_second = timedelta(seconds=1)
+        stamp_delta = copy.deepcopy(self.event_spacing)
         while len(newdata) <= num_seconds:
             # print('dind={}  sind={}  gind={}  wait={}  curstm={}  end_stm={}'
             #       .format(data_index,
@@ -201,7 +183,7 @@ class MINK:
                     if segment_index < (len(segments) - 1):
                         waiting_for_gap = False
                         segment_index += 1
-                        current_stamp = copy.deepcopy(data[data_index][0]) + one_second
+                        current_stamp = copy.deepcopy(data[data_index][0]) + stamp_delta
                         end_stamp = copy.deepcopy(data[data_index + 1][0])
                 for i in range(1, self.num_sensors + 1):
                     newpoint.append(data[data_index][i])
@@ -211,7 +193,7 @@ class MINK:
                     for i in range(self.num_sensors):
                         newpoint.append(gap_values[gap_index][i])
                     missing.append(len(newdata))
-                    current_stamp += one_second
+                    current_stamp += stamp_delta
                 if current_stamp >= end_stamp:
                     waiting_for_gap = True
                     gap_index += 1
@@ -221,6 +203,9 @@ class MINK:
 
     def _impute_func_carry_forward(self, data: list, num_seconds: int) -> (list, datetime, list):
         segments = self._get_data_segments(data=data)
+        print('Number of data segments: {}'.format(len(segments)))
+        for seg in segments:
+            print(str(seg))
         gap_values = list()
         for i in range(1, len(segments)):
             sensor_values = list()
