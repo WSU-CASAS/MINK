@@ -1,3 +1,0 @@
-[submodule "mobiledata"]
-	path = mobiledata
-	url = ../../mobile-activity-learning/tools/al-data-layer.git
