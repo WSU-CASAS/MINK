@@ -26,6 +26,10 @@ class MINK:
         self.data_fields = collections.OrderedDict()
         self.num_sensors = 16
         self.event_spacing = timedelta(seconds=1.0)
+        self._label_field = 'user_activity_label'
+        self._label_field_index = -1
+        self._has_label_field = False
+        self._sensor_index_list = list()
         self._impute_field_mean = 'field_mean'
         self._impute_carry_forward = 'carry_forward'
         self._impute_carry_backward = 'carry_backward'
@@ -63,15 +67,19 @@ class MINK:
 
             # Count the number of sensors.
             self.num_sensors = 0
+            i = 0
+            # Create a list of just the sensor index positions so we don't have to check for more
+            # than float vs string in most of our imputation methods.
+            del self._sensor_index_list
+            self._sensor_index_list = list()
             for field_name, field_type in self.data_fields.items():
-                if field_type == 'f':
+                if field_name != self._label_field and field_type != 'dt':
                     self.num_sensors += 1
-
-            # Estimate the sample spacing.
-            if len(data) > 11:
-                start_stamp = data[0][0]
-                end_stamp = data[10][0]
-                self.event_spacing = abs(end_stamp - start_stamp) / 10.0
+                    self._sensor_index_list.append(i)
+                else:
+                    self._has_label_field = True
+                    self._label_field_index = i
+                i += 1
         return data
 
     def report_data_statistics(self, data: list, segments: list):
@@ -182,8 +190,8 @@ class MINK:
                     # print(str(gap_values[gap_index]))
                     # print(len(gap_values[gap_index]))
                     # print(point_length - 1)
-                    for i in range(point_length - 1):
-                        newpoint.append(gap_values[gap_index][i])
+                    for i in self._sensor_index_list:
+                        newpoint.append(gap_values[gap_index][i - 1])
                     missing.append(len(newdata))
                     current_stamp += stamp_delta
                     newdata.append(newpoint)
@@ -196,25 +204,25 @@ class MINK:
 
     def _impute_func_field_mean(self, data: list, segments: list) -> (list, datetime, list):
         gap_values = list()
-        point_length = len(self.data_fields)
         # Build a list of the mean of each field
         means = list()
         for i, field_type in enumerate(self.data_fields.values()):
-            if field_type == 'f':
-                field = list()
-                for column in data:
-                    if column[i] is not None:
-                        field.append(column[i])
-                if len(field) == 0:
-                    field.append(0)
-                means.append(np.mean(field))
-            else:
-                means.append(None)
+            if i in self._sensor_index_list:
+                if field_type == 'f':
+                    field = list()
+                    for column in data:
+                        if column[i] is not None:
+                            field.append(column[i])
+                    if len(field) == 0:
+                        field.append(0)
+                    means.append(np.mean(field))
+                else:
+                    means.append(None)
 
         # Build the gap values to use.
         for i in range(1, len(segments)):
             sensor_values = list()
-            for s in range(1, point_length):
+            for s in self._sensor_index_list:
                 sensor_values.append(means[s])
             gap_values.append(copy.deepcopy(sensor_values))
             del sensor_values
@@ -226,10 +234,9 @@ class MINK:
 
     def _impute_func_carry_forward(self, data: list, segments: list) -> (list, datetime, list):
         gap_values = list()
-        point_length = len(self.data_fields)
         for i in range(1, len(segments)):
             sensor_values = list()
-            for s in range(1, point_length):
+            for s in self._sensor_index_list:
                 value = data[segments[i - 1]['last_index']][s]
                 sensor_values.append(value)
             gap_values.append(copy.deepcopy(sensor_values))
@@ -242,10 +249,9 @@ class MINK:
 
     def _impute_func_carry_backward(self, data: list, segments: list) -> (list, datetime, list):
         gap_values = list()
-        point_length = len(self.data_fields)
         for i in range(1, len(segments)):
             sensor_values = list()
-            for s in range(1, point_length):
+            for s in self._sensor_index_list:
                 value = data[segments[i]['first_index']][s]
                 sensor_values.append(value)
             gap_values.append(copy.deepcopy(sensor_values))
@@ -258,13 +264,12 @@ class MINK:
 
     def _impute_func_carry_average(self, data: list, segments: list) -> (list, datetime, list):
         gap_values = list()
-        point_length = len(self.data_fields)
         for i in range(1, len(segments)):
             sensor_values = list()
             for s, field_type in enumerate(self.data_fields.values()):
                 if field_type == 'dt':
                     continue
-                if field_type == 'f':
+                if field_type == 'f' and s in self._sensor_index_list:
                     value = None
                     if data[segments[i - 1]['last_index']][s] is not None \
                             and data[segments[i]['first_index']][s] is not None:
