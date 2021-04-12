@@ -16,9 +16,11 @@ import argparse
 import collections
 import copy
 from datetime import datetime, timedelta
-
+import os
 import numpy as np
 from mobiledata import MobileData
+import joblib
+from sklearn.neural_network import MLPRegressor
 
 
 class MINK:
@@ -30,6 +32,10 @@ class MINK:
         self._label_field_index = -1
         self._has_label_field = False
         self._sensor_index_list = list()
+        self._model_directory = 'models'
+        self._num_past_events = 30
+
+        # Definitions
         self._impute_field_mean = 'field_mean'
         self._impute_carry_forward = 'carry_forward'
         self._impute_carry_backward = 'carry_backward'
@@ -192,6 +198,8 @@ class MINK:
                     # print(point_length - 1)
                     for i in self._sensor_index_list:
                         newpoint.append(gap_values[gap_index][i - 1])
+                    if self._has_label_field:
+                        newpoint.append(None)
                     missing.append(len(newdata))
                     current_stamp += stamp_delta
                     newdata.append(newpoint)
@@ -218,6 +226,8 @@ class MINK:
                     means.append(np.mean(field))
                 else:
                     means.append(None)
+            else:
+                means.append(None)
 
         # Build the gap values to use.
         for i in range(1, len(segments)):
@@ -288,13 +298,57 @@ class MINK:
         return newdata, dt, missing
 
     def _impute_func_regmlp(self, data: list, segments: list) -> (list, datetime, list):
+        self._make_model_directory(directory=self._model_directory)
         newdata = data
         dt = datetime.now()
         missing = list([self.num_sensors])
+        vector = None
+        target = None
+
+        for s, field_type in enumerate(self.data_fields.values()):
+            if s not in self._sensor_index_list:
+                continue
+            if field_type == 'f':
+                del vector
+                vector = None
+                del target
+                target = None
+                model_name = 'MLP.{}.model'.format(s)
+                s_start = segments[0]['first_index']
+                s_end = segments[0]['last_index'] + 1
+                # vector, target = self._build_feature_vector(data=data[s_start:s_end],
+                #                                             index=s)
+
+                for i in range(len(segments)):
+                    s_start = segments[i]['first_index']
+                    s_end = segments[i]['last_index'] + 1
+                    np_v, np_t = self._build_feature_vector(data=data[s_start:s_end],
+                                                            index=s)
+                    if np_v is not None and np_t is not None:
+                        if vector is None:
+                            vector = np_v
+                        else:
+                            print('vector shape: ', vector.shape)
+                            print('np_v shape: ', np_v.shape)
+                            vector = np.vstack((vector, np_v))
+                            print('vector shape: ', vector.shape)
+                        if target is None:
+                            target = np_t
+                        else:
+                            print('target shape: ', target.shape)
+                            print('np_t shape: ', np_t.shape)
+                            target = np.hstack((target, np_t))
+
+                print('Training model: {}'.format(model_name))
+                model = MLPRegressor().fit(vector, target)
+                joblib.dump(value=model,
+                            filename=os.path.join(self._model_directory,
+                                                  model_name))
 
         return newdata, dt, missing
 
     def _impute_func_regrandforest(self, data: list, segments: list) -> (list, datetime, list):
+        self._make_model_directory(directory=self._model_directory)
         newdata = data
         dt = datetime.now()
         missing = list([self.num_sensors])
@@ -302,6 +356,7 @@ class MINK:
         return newdata, dt, missing
 
     def _impute_func_regsgd(self, data: list, segments: list) -> (list, datetime, list):
+        self._make_model_directory(directory=self._model_directory)
         newdata = data
         dt = datetime.now()
         missing = list([self.num_sensors])
@@ -309,11 +364,42 @@ class MINK:
         return newdata, dt, missing
 
     def _impute_func_regdnn(self, data: list, segments: list) -> (list, datetime, list):
+        self._make_model_directory(directory=self._model_directory)
         newdata = data
         dt = datetime.now()
         missing = list([self.num_sensors])
 
         return newdata, dt, missing
+
+    @staticmethod
+    def _make_model_directory(directory: str):
+        if not os.path.isdir(directory):
+            os.mkdir(directory)
+        return
+
+    def _build_feature_vector(self, data: list, index: int):
+        length = len(data) - self._num_past_events
+        width = self._num_past_events + 1
+
+        # Check to see if we have enough data to build a feature vector.
+        if length < 1:
+            return None, None
+        vector = np.zeros((length, width))
+        target = np.zeros(length)
+        buffer = collections.deque()
+
+        # Populate the sensor buffer.
+        for i in range(self._num_past_events):
+            buffer.append(data[i][index])
+
+        for i in range(self._num_past_events, len(data)):
+            for j in range(self._num_past_events):
+                vector[i - self._num_past_events][j] = buffer[j]
+            vector[i - self._num_past_events][width - 1] = float(data[i][0].hour)
+            target[i - self._num_past_events] = data[i][index]
+            buffer.popleft()
+            buffer.append(data[i][index])
+        return vector, target
 
     def report_data(self, filename: str, data: list):
         # Create the filename that we want to write to.
