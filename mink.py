@@ -56,7 +56,7 @@ class MINK:
             self._impute_carry_average: self._impute_func_carry_average,
             self._impute_regmlp: self._impute_func_regmlp,
             self._impute_regrandforest: self._impute_func_regrandforest,
-            self._impute_regsgd: self._impute_regsgd,
+            self._impute_regsgd: self._impute_func_regsgd,
             self._impute_regdnn: self._impute_func_regdnn})
         self._impute_methods = list(self._impute_functions.keys())
         self._impute_methods.sort()
