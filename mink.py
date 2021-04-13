@@ -324,8 +324,7 @@ class MINK:
                     print('Training model: {}'.format(model_name))
                     model = MLPRegressor().fit(vector, target)
                     joblib.dump(value=model,
-                                filename=os.path.join(self._model_directory,
-                                                      model_name))
+                                filename=model_filename)
         return newdata, dt, missing
 
     def _impute_func_regrandforest(self, data: list, segments: list) -> (list, datetime, list):
@@ -334,6 +333,29 @@ class MINK:
         dt = datetime.now()
         missing = list([self.num_sensors])
 
+        for s, field_type in enumerate(self.data_fields.values()):
+            if s not in self._sensor_index_list:
+                continue
+            if field_type == 'f':
+                model_name = 'RandForest.{}.model'.format(s)
+                model_filename = os.path.join(self._model_directory, model_name)
+                train_model = True
+
+                if not self._overwrite_existing_models and os.path.exists(model_filename):
+                    train_model = False
+
+                if train_model:
+                    vector, target = self._build_sensor_feature_vector(data=data,
+                                                                       segments=segments,
+                                                                       index=s)
+
+                    print('Training model: {}'.format(model_name))
+                    model = RandomForestRegressor(max_depth=30,
+                                                  min_samples_split=5,
+                                                  n_jobs=10)
+                    model.fit(vector, target)
+                    joblib.dump(value=model,
+                                filename=model_filename)
         return newdata, dt, missing
 
     def _impute_func_regsgd(self, data: list, segments: list) -> (list, datetime, list):
