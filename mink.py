@@ -27,6 +27,51 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
 
+class PredictionObject:
+    def __init__(self, num_past_events: int, index: int, model):
+        self._num_past_events = num_past_events
+        self.index = index
+        self._model = model
+        self.buffer = collections.deque()
+        return
+
+    def load_buffer(self, data: list):
+        # Populate the sensor buffer.
+        if len(self.buffer) < self._num_past_events:
+            for i in range(self._num_past_events):
+                self.buffer.append(data[i][self.index])
+        return
+
+    def add_reading(self, reading):
+        self.buffer.popleft()
+        self.buffer.append(reading[self.index])
+        return
+
+    def predict(self, stamp: datetime):
+        vector = np.zeros((1, self._num_past_events+1))
+        for i in range(self._num_past_events):
+            vector[0][i] = self.buffer[i]
+        vector[0][self._num_past_events] = float(stamp.hour)
+        value = self._model.predict(vector)
+        return value[0]
+
+
+class PredictionDummy:
+    def __init__(self, num_past_events: int, index: int):
+        self._num_past_events = num_past_events
+        self.index = index
+        return
+
+    def load_buffer(self, data: list):
+        return
+
+    def add_reading(self, reading):
+        return
+
+    def predict(self, stamp: datetime):
+        return None
+
+
 class MINK:
     def __init__(self):
         self.data_fields = collections.OrderedDict()
@@ -215,6 +260,57 @@ class MINK:
         dt = data[0][0]
         return newdata, dt, missing
 
+    def _populate_from_models(self, data: list, segments: list,
+                              model_list: list) -> (list, datetime, list):
+        newdata = list()
+        missing = list()
+
+        # Start processing the data
+        point_length = len(data[0])
+        data_length = len(data)
+        model_list_length = len(model_list)
+        data_index = 0
+        segment_index = 0
+        gap_index = 0
+        waiting_for_gap = True
+        current_stamp = data[0][0]
+        end_stamp = data[0][0]
+        stamp_delta = copy.deepcopy(self.event_spacing)
+        while current_stamp <= data[-1][0] and data_index < data_length:
+            newpoint = list()
+            if waiting_for_gap:
+                newpoint.append(copy.deepcopy(data[data_index][0]))
+                if data_index >= segments[segment_index]['last_index']:
+                    if segment_index < (len(segments) - 1):
+                        waiting_for_gap = False
+                        segment_index += 1
+                        current_stamp = copy.deepcopy(data[data_index][0]) + stamp_delta
+                        end_stamp = copy.deepcopy(data[data_index + 1][0])
+                for i in range(1, point_length):
+                    newpoint.append(data[data_index][i])
+                for i in range(model_list_length):
+                    model_list[i].add_reading(reading=data[data_index])
+                data_index += 1
+                newdata.append(newpoint)
+            else:
+                newpoint.append(copy.deepcopy(current_stamp))
+                if current_stamp < end_stamp:
+                    for i in range(model_list_length):
+                        newpoint.append(model_list[i].predict(stamp=current_stamp))
+                    if self._has_label_field:
+                        newpoint.append(None)
+                    for i in range(model_list_length):
+                        model_list[i].add_reading(reading=newpoint)
+                    missing.append(len(newdata))
+                    current_stamp += stamp_delta
+                    newdata.append(newpoint)
+                if current_stamp >= end_stamp:
+                    waiting_for_gap = True
+                    gap_index += 1
+
+        dt = data[0][0]
+        return newdata, dt, missing
+
     def _impute_func_field_mean(self, data: list, segments: list) -> (list, datetime, list):
         gap_values = list()
         # Build a list of the mean of each field
@@ -304,9 +400,7 @@ class MINK:
 
     def _impute_func_regmlp(self, data: list, segments: list) -> (list, datetime, list):
         self._make_model_directory(directory=self._model_directory)
-        newdata = data
-        dt = datetime.now()
-        missing = list([self.num_sensors])
+        model_list = list()
 
         for s, field_type in enumerate(self.data_fields.values()):
             if s not in self._sensor_index_list:
@@ -328,13 +422,33 @@ class MINK:
                     model = MLPRegressor().fit(vector, target)
                     joblib.dump(value=model,
                                 filename=model_filename)
+
+        for s, field_type in enumerate(self.data_fields.values()):
+            if field_type == 'dt' or s == self._label_field_index:
+                continue
+            if field_type == 'f':
+                model_name = 'MLP.{}.model'.format(s)
+                model_filename = os.path.join(self._model_directory, model_name)
+                model = joblib.load(model_filename)
+                model_list.append(PredictionObject(num_past_events=self._num_past_events,
+                                                   index=s,
+                                                   model=model))
+            else:
+                model_list.append(PredictionDummy(num_past_events=self._num_past_events,
+                                                  index=s))
+
+        # Prime the buffers.
+        for i in range(len(model_list)):
+            model_list[i].load_buffer(data=data)
+
+        newdata, dt, missing = self._populate_from_models(data=data,
+                                                          segments=segments,
+                                                          model_list=model_list)
         return newdata, dt, missing
 
     def _impute_func_regrandforest(self, data: list, segments: list) -> (list, datetime, list):
         self._make_model_directory(directory=self._model_directory)
-        newdata = data
-        dt = datetime.now()
-        missing = list([self.num_sensors])
+        model_list = list()
 
         for s, field_type in enumerate(self.data_fields.values()):
             if s not in self._sensor_index_list:
@@ -359,13 +473,33 @@ class MINK:
                     model.fit(vector, target)
                     joblib.dump(value=model,
                                 filename=model_filename)
+
+        for s, field_type in enumerate(self.data_fields.values()):
+            if field_type == 'dt' or s == self._label_field_index:
+                continue
+            if field_type == 'f':
+                model_name = 'RandForest.{}.model'.format(s)
+                model_filename = os.path.join(self._model_directory, model_name)
+                model = joblib.load(model_filename)
+                model_list.append(PredictionObject(num_past_events=self._num_past_events,
+                                                   index=s,
+                                                   model=model))
+            else:
+                model_list.append(PredictionDummy(num_past_events=self._num_past_events,
+                                                  index=s))
+
+        # Prime the buffers.
+        for i in range(len(model_list)):
+            model_list[i].load_buffer(data=data)
+
+        newdata, dt, missing = self._populate_from_models(data=data,
+                                                          segments=segments,
+                                                          model_list=model_list)
         return newdata, dt, missing
 
     def _impute_func_regsgd(self, data: list, segments: list) -> (list, datetime, list):
         self._make_model_directory(directory=self._model_directory)
-        newdata = data
-        dt = datetime.now()
-        missing = list([self.num_sensors])
+        model_list = list()
 
         for s, field_type in enumerate(self.data_fields.values()):
             if s not in self._sensor_index_list:
@@ -389,6 +523,28 @@ class MINK:
                     model.fit(vector, target)
                     joblib.dump(value=model,
                                 filename=model_filename)
+
+        for s, field_type in enumerate(self.data_fields.values()):
+            if field_type == 'dt' or s == self._label_field_index:
+                continue
+            if field_type == 'f':
+                model_name = 'SGD.{}.model'.format(s)
+                model_filename = os.path.join(self._model_directory, model_name)
+                model = joblib.load(model_filename)
+                model_list.append(PredictionObject(num_past_events=self._num_past_events,
+                                                   index=s,
+                                                   model=model))
+            else:
+                model_list.append(PredictionDummy(num_past_events=self._num_past_events,
+                                                  index=s))
+
+        # Prime the buffers.
+        for i in range(len(model_list)):
+            model_list[i].load_buffer(data=data)
+
+        newdata, dt, missing = self._populate_from_models(data=data,
+                                                          segments=segments,
+                                                          model_list=model_list)
         return newdata, dt, missing
 
     def _impute_func_regdnn(self, data: list, segments: list) -> (list, datetime, list):
