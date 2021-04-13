@@ -21,6 +21,7 @@ import numpy as np
 from mobiledata import MobileData
 import joblib
 from sklearn.neural_network import MLPRegressor
+from sklearn.ensemble import RandomForestRegressor
 
 
 class MINK:
@@ -34,6 +35,7 @@ class MINK:
         self._sensor_index_list = list()
         self._model_directory = 'models'
         self._num_past_events = 30
+        self._overwrite_existing_models = False
 
         # Definitions
         self._impute_field_mean = 'field_mean'
@@ -302,49 +304,28 @@ class MINK:
         newdata = data
         dt = datetime.now()
         missing = list([self.num_sensors])
-        vector = None
-        target = None
 
         for s, field_type in enumerate(self.data_fields.values()):
             if s not in self._sensor_index_list:
                 continue
             if field_type == 'f':
-                del vector
-                vector = None
-                del target
-                target = None
                 model_name = 'MLP.{}.model'.format(s)
-                s_start = segments[0]['first_index']
-                s_end = segments[0]['last_index'] + 1
-                # vector, target = self._build_feature_vector(data=data[s_start:s_end],
-                #                                             index=s)
+                model_filename = os.path.join(self._model_directory, model_name)
+                train_model = True
 
-                for i in range(len(segments)):
-                    s_start = segments[i]['first_index']
-                    s_end = segments[i]['last_index'] + 1
-                    np_v, np_t = self._build_feature_vector(data=data[s_start:s_end],
-                                                            index=s)
-                    if np_v is not None and np_t is not None:
-                        if vector is None:
-                            vector = np_v
-                        else:
-                            print('vector shape: ', vector.shape)
-                            print('np_v shape: ', np_v.shape)
-                            vector = np.vstack((vector, np_v))
-                            print('vector shape: ', vector.shape)
-                        if target is None:
-                            target = np_t
-                        else:
-                            print('target shape: ', target.shape)
-                            print('np_t shape: ', np_t.shape)
-                            target = np.hstack((target, np_t))
+                if not self._overwrite_existing_models and os.path.exists(model_filename):
+                    train_model = False
 
-                print('Training model: {}'.format(model_name))
-                model = MLPRegressor().fit(vector, target)
-                joblib.dump(value=model,
-                            filename=os.path.join(self._model_directory,
-                                                  model_name))
+                if train_model:
+                    vector, target = self._build_sensor_feature_vector(data=data,
+                                                                       segments=segments,
+                                                                       index=s)
 
+                    print('Training model: {}'.format(model_name))
+                    model = MLPRegressor().fit(vector, target)
+                    joblib.dump(value=model,
+                                filename=os.path.join(self._model_directory,
+                                                      model_name))
         return newdata, dt, missing
 
     def _impute_func_regrandforest(self, data: list, segments: list) -> (list, datetime, list):
@@ -376,6 +357,26 @@ class MINK:
         if not os.path.isdir(directory):
             os.mkdir(directory)
         return
+
+    def _build_sensor_feature_vector(self, data: list, segments: list, index: int):
+        vector = None
+        target = None
+
+        for i in range(len(segments)):
+            s_start = segments[i]['first_index']
+            s_end = segments[i]['last_index'] + 1
+            np_v, np_t = self._build_feature_vector(data=data[s_start:s_end],
+                                                    index=index)
+            if np_v is not None and np_t is not None:
+                if vector is None:
+                    vector = np_v
+                else:
+                    vector = np.vstack((vector, np_v))
+                if target is None:
+                    target = np_t
+                else:
+                    target = np.hstack((target, np_t))
+        return vector, target
 
     def _build_feature_vector(self, data: list, index: int):
         length = len(data) - self._num_past_events
