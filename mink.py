@@ -350,9 +350,9 @@ class MINK:
                                                                        index=s)
 
                     print('Training model: {}'.format(model_name))
-                    model = RandomForestRegressor(max_depth=30,
+                    model = RandomForestRegressor(max_depth=20,
                                                   min_samples_split=5,
-                                                  n_jobs=10)
+                                                  n_jobs=30)
                     model.fit(vector, target)
                     joblib.dump(value=model,
                                 filename=model_filename)
