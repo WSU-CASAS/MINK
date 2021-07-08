@@ -29,6 +29,12 @@ from sklearn.preprocessing import StandardScaler
 
 class PredictionObject:
     def __init__(self, num_past_events: int, index: int, model):
+        # TODO: Add model_name
+        # TODO: Add model_id
+        # TODO: Add data_fields
+        # TODO: Add model_directory
+        # TODO: Add sensor_index_list
+        # TODO: Add label_field_index
         self._num_past_events = num_past_events
         self.index = index
         self._model = model
@@ -47,7 +53,7 @@ class PredictionObject:
         self.buffer.append(reading[self.index])
         return
 
-    def predict(self, stamp: datetime):
+    def predict(self, stamp: datetime) -> float:
         vector = np.zeros((1, self._num_past_events+1))
         for i in range(self._num_past_events):
             vector[0][i] = self.buffer[i]
@@ -56,10 +62,11 @@ class PredictionObject:
         return value[0]
 
 
-class PredictionDummy:
-    def __init__(self, num_past_events: int, index: int):
-        self._num_past_events = num_past_events
-        self.index = index
+class PredictionDummy(PredictionObject):
+    def __init__(self, num_past_events: int, index: int, model=None):
+        super().__init__(num_past_events=num_past_events,
+                         index=index,
+                         model=model)
         return
 
     def load_buffer(self, data: list):
@@ -68,8 +75,59 @@ class PredictionDummy:
     def add_reading(self, reading):
         return
 
-    def predict(self, stamp: datetime):
+    def predict(self, stamp: datetime) -> float:
         return None
+
+
+class PredictionRegMLP(PredictionObject):
+    def __init__(self, num_past_events: int, index: int, model=None):
+        super().__init__(num_past_events=num_past_events,
+                         index=index,
+                         model=model)
+        return
+
+    def load_buffer(self, data: list):
+        return
+
+    def add_reading(self, reading):
+        return
+
+    def predict(self, stamp: datetime) -> float:
+        return 0.0
+
+
+class PredictionRegRandForest(PredictionObject):
+    def __init__(self, num_past_events: int, index: int, model=None):
+        super().__init__(num_past_events=num_past_events,
+                         index=index,
+                         model=model)
+        return
+
+    def load_buffer(self, data: list):
+        return
+
+    def add_reading(self, reading):
+        return
+
+    def predict(self, stamp: datetime) -> float:
+        return 0.0
+
+
+class PredictionRegSGD(PredictionObject):
+    def __init__(self, num_past_events: int, index: int, model=None):
+        super().__init__(num_past_events=num_past_events,
+                         index=index,
+                         model=model)
+        return
+
+    def load_buffer(self, data: list):
+        return
+
+    def add_reading(self, reading):
+        return
+
+    def predict(self, stamp: datetime) -> float:
+        return 0.0
 
 
 class MINK:
