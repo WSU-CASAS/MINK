@@ -25,6 +25,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import SGDRegressor
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
+from tensorflow import keras
 
 
 class PredictionObject:
@@ -144,6 +145,7 @@ class MINK:
         self._overwrite_existing_models = False
 
         # Definitions
+        self._gap_size = 10
         self._impute_field_mean = 'field_mean'
         self._impute_carry_forward = 'carry_forward'
         self._impute_carry_backward = 'carry_backward'
@@ -233,17 +235,29 @@ class MINK:
 
         return newdata, dt, missing
 
-    @staticmethod
-    def _get_data_segments(data: list) -> list:
+    def _get_data_segments(self, data: list) -> list:
         segments = list()
 
+        # Find first data line with all sensors populated.
+        first_index = 0
+        for i in range(len(data)):
+            first_index = i
+            is_full_values = True
+            for j in range(len(data[i]) - 1):
+                if data[i][j] is None:
+                    is_full_values = False
+            if is_full_values:
+                break
+
+        print('segments, first_index={}'.format(first_index))
+
         # Initialize variables for our loop.
-        new_segment = dict({'first_index': 0,
-                            'last_index': 0,
-                            'first_stamp': copy.deepcopy(data[0][0]),
+        new_segment = dict({'first_index': first_index,
+                            'last_index': first_index,
+                            'first_stamp': copy.deepcopy(data[first_index][0]),
                             'last_stamp': copy.deepcopy(data[-1][0])})
-        one_second = timedelta(seconds=1)
-        for i in range(1, len(data)):
+        one_second = timedelta(seconds=self._gap_size)
+        for i in range(first_index, len(data)):
             # If the previous stamp is more than one second behind the current one, then we have
             # a gap that needs to be filled.  i-1 is the end of the previous segment and i is the
             # start of the current segment.
@@ -754,8 +768,14 @@ class MINK:
                             type=str,
                             help=('The complete data file to run calculations against the '
                                   'imputed data.'))
+        parser.add_argument('--gapsize',
+                            dest='gapsize',
+                            type=int,
+                            default=self._gap_size,
+                            help='The minimum number of seconds to be considered a gap to impute.')
         args = parser.parse_args()
 
+        self._gap_size = args.gapsize
         self._config_method = args.method
         self._config_datafile = args.data
         self._config_fulldatafile = args.fulldata
