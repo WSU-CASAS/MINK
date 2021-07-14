@@ -131,6 +131,23 @@ class PredictionRegSGD(PredictionObject):
         return 0.0
 
 
+class PredictionGAN(PredictionObject):
+    def __init__(self, num_past_events: int, index: int, model=None):
+        super().__init__(num_past_events=num_past_events,
+                         index=index,
+                         model=model)
+        return
+
+    def load_buffer(self, data: list):
+        return
+
+    def add_reading(self, reading):
+        return
+
+    def predict(self, stamp: datetime) -> float:
+        return 0.0
+
+
 class MINK:
     def __init__(self):
         self.data_fields = collections.OrderedDict()
@@ -154,6 +171,7 @@ class MINK:
         self._impute_regrandforest = 'regression_rand_forest'
         self._impute_regsgd = 'regression_sgd'
         self._impute_regdnn = 'regression_dnn'
+        self._impute_gan = 'gan'
         self._impute_functions = dict({
             self._impute_field_mean: self._impute_func_field_mean,
             self._impute_carry_forward: self._impute_func_carry_forward,
@@ -162,7 +180,8 @@ class MINK:
             self._impute_regmlp: self._impute_func_regmlp,
             self._impute_regrandforest: self._impute_func_regrandforest,
             self._impute_regsgd: self._impute_func_regsgd,
-            self._impute_regdnn: self._impute_func_regdnn})
+            self._impute_regdnn: self._impute_func_regdnn,
+            self._impute_gan: self._impute_func_gan})
         self._impute_methods = list(self._impute_functions.keys())
         self._impute_methods.sort()
         self._config_method = None
@@ -620,6 +639,14 @@ class MINK:
         return newdata, dt, missing
 
     def _impute_func_regdnn(self, data: list, segments: list) -> (list, datetime, list):
+        self._make_model_directory(directory=self._model_directory)
+        newdata = data
+        dt = datetime.now()
+        missing = list([self.num_sensors])
+
+        return newdata, dt, missing
+
+    def _impute_func_gan(self, data: list, segments: list) -> (list, datetime, list):
         self._make_model_directory(directory=self._model_directory)
         newdata = data
         dt = datetime.now()
