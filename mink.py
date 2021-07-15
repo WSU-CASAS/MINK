@@ -26,6 +26,9 @@ from sklearn.linear_model import SGDRegressor
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from tensorflow import keras
+from tensorflow.python.keras.preprocessing.sequence import TimeseriesGenerator
+from tensorflow.python.keras import Sequential
+from tensorflow.python.keras.layers import SimpleRNN, Dense
 
 
 class PredictionObject:
@@ -648,9 +651,63 @@ class MINK:
 
     def _impute_func_gan(self, data: list, segments: list) -> (list, datetime, list):
         self._make_model_directory(directory=self._model_directory)
-        newdata = data
-        dt = datetime.now()
-        missing = list([self.num_sensors])
+        model_list = list()
+
+        for s, field_type in enumerate(self.data_fields.values()):
+            if s not in self._sensor_index_list:
+                continue
+            if field_type == 'f':
+                model_name = 'GAN.{}.model'.format(s)
+                model_filename = os.path.join(self._model_directory, model_name)
+                train_model = True
+
+                if not self._overwrite_existing_models and os.path.exists(model_filename):
+                    train_model = False
+
+                if train_model:
+                    vector, target = self._build_sensor_feature_vector(data=data,
+                                                                       segments=segments,
+                                                                       index=s)
+
+                    print('Training model: {}'.format(model_name))
+                    length = self._num_past_events
+                    n_features = len(vector[0])
+                    generator = TimeseriesGenerator(data=vector,
+                                                    targets=target,
+                                                    stride=3,
+                                                    length=length,
+                                                    batch_size=128)
+                    model = Sequential()
+                    model.add(SimpleRNN(100, activation='relu', input_shape=(length, n_features)))
+                    model.add(Dense(100, activation='relu', input_shape=(length, n_features)))
+                    model.add(Dense(1))
+                    model.compile(optimizer='adam', loss="mse")
+                    model.fit(generator)
+
+                    keras.models.save_model(model=model,
+                                            filepath=model_filename)
+
+        for s, field_type in enumerate(self.data_fields.values()):
+            if field_type == 'dt' or s == self._label_field_index:
+                continue
+            if field_type == 'f':
+                model_name = 'GAN.{}.model'.format(s)
+                model_filename = os.path.join(self._model_directory, model_name)
+                model = keras.models.load_model(model_filename)
+                model_list.append(PredictionObject(num_past_events=self._num_past_events,
+                                                   index=s,
+                                                   model=model))
+            else:
+                model_list.append(PredictionDummy(num_past_events=self._num_past_events,
+                                                  index=s))
+
+        # Prime the buffers.
+        for i in range(len(model_list)):
+            model_list[i].load_buffer(data=data)
+
+        newdata, dt, missing = self._populate_from_models(data=data,
+                                                          segments=segments,
+                                                          model_list=model_list)
 
         return newdata, dt, missing
 
