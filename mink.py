@@ -19,6 +19,7 @@ from datetime import datetime, timedelta
 import os
 import numpy as np
 import time
+import uuid
 from mobiledata import MobileData
 import joblib
 from sklearn.neural_network import MLPRegressor
@@ -168,6 +169,7 @@ class MINK:
         self._model_directory = 'models'
         self._num_past_events = 10
         self._overwrite_existing_models = False
+        self._model_id = str(uuid.uuid4().hex)
 
         # Definitions
         self._gap_size = 10
@@ -513,7 +515,7 @@ class MINK:
             if s not in self._sensor_index_list:
                 continue
             if field_type == 'f':
-                model_name = 'MLP.{}.model'.format(s)
+                model_name = 'MLP.{}.{}.model'.format(self._model_id, s)
                 model_filename = os.path.join(self._model_directory, model_name)
                 train_model = True
 
@@ -534,7 +536,7 @@ class MINK:
             if field_type == 'dt' or s == self._label_field_index:
                 continue
             if field_type == 'f':
-                model_name = 'MLP.{}.model'.format(s)
+                model_name = 'MLP.{}.{}.model'.format(self._model_id, s)
                 model_filename = os.path.join(self._model_directory, model_name)
                 model = joblib.load(model_filename)
                 model_list.append(PredictionObject(num_past_events=self._num_past_events,
@@ -561,7 +563,7 @@ class MINK:
             if s not in self._sensor_index_list:
                 continue
             if field_type == 'f':
-                model_name = 'RandForest.{}.model'.format(s)
+                model_name = 'RandForest.{}.{}.model'.format(self._model_id, s)
                 model_filename = os.path.join(self._model_directory, model_name)
                 train_model = True
 
@@ -585,7 +587,7 @@ class MINK:
             if field_type == 'dt' or s == self._label_field_index:
                 continue
             if field_type == 'f':
-                model_name = 'RandForest.{}.model'.format(s)
+                model_name = 'RandForest.{}.{}.model'.format(self._model_id, s)
                 model_filename = os.path.join(self._model_directory, model_name)
                 model = joblib.load(model_filename)
                 model_list.append(PredictionObject(num_past_events=self._num_past_events,
@@ -612,7 +614,7 @@ class MINK:
             if s not in self._sensor_index_list:
                 continue
             if field_type == 'f':
-                model_name = 'SGD.{}.model'.format(s)
+                model_name = 'SGD.{}.{}.model'.format(self._model_id, s)
                 model_filename = os.path.join(self._model_directory, model_name)
                 train_model = True
 
@@ -635,7 +637,7 @@ class MINK:
             if field_type == 'dt' or s == self._label_field_index:
                 continue
             if field_type == 'f':
-                model_name = 'SGD.{}.model'.format(s)
+                model_name = 'SGD.{}.{}.model'.format(self._model_id, s)
                 model_filename = os.path.join(self._model_directory, model_name)
                 model = joblib.load(model_filename)
                 model_list.append(PredictionObject(num_past_events=self._num_past_events,
@@ -670,7 +672,7 @@ class MINK:
             if s not in self._sensor_index_list:
                 continue
             if field_type == 'f':
-                model_name = 'WaveNet.{}.model.h5'.format(s)
+                model_name = 'WaveNet.{}.{}.model'.format(self._model_id, s)
                 model_filename = os.path.join(self._model_directory, model_name)
                 train_model = True
 
@@ -720,7 +722,10 @@ class MINK:
                     optimizer = keras.optimizers.Adam(learning_rate=0.002)
                     model.compile(loss="mse",
                                   optimizer=optimizer,
-                                  metrics=[last_time_step_mse])
+                                  metrics=[last_time_step_mse,
+                                           keras.metrics.MeanSquaredError(),
+                                           keras.metrics.MeanAbsoluteError(),
+                                           keras.metrics.KLDivergence()])
                     run_logdir = self._get_run_logdir()
                     tensorboard_cb = keras.callbacks.TensorBoard(run_logdir)
                     history = model.fit(x_train, y_train,
@@ -729,19 +734,26 @@ class MINK:
                                         callbacks=[tensorboard_cb])
 
                     # Save the model to disk.
-                    keras.models.save_model(model=model,
-                                            filepath=model_filename)
+                    # keras.models.save_model(model=model,
+                    #                         filepath=model_filename)
+                    model.save(filepath=model_filename)
 
                     del vector
                     del model
+                    # model = keras.models.load_model(
+                    #     model_filename,
+                    #     custom_objects={'last_time_step_mse': last_time_step_mse})
+                    # del model
 
         for s, field_type in enumerate(self.data_fields.values()):
             if field_type == 'dt' or s == self._label_field_index:
                 continue
             if field_type == 'f':
-                model_name = 'WaveNet.{}.model.h5'.format(s)
+                model_name = 'WaveNet.{}.{}.model'.format(self._model_id, s)
                 model_filename = os.path.join(self._model_directory, model_name)
-                model = keras.models.load_model(model_filename)
+                model = keras.models.load_model(
+                    model_filename,
+                    custom_objects={'last_time_step_mse': last_time_step_mse})
                 model_list.append(PredictionObject(num_past_events=self._num_past_events,
                                                    index=s,
                                                    model=model))
@@ -767,7 +779,7 @@ class MINK:
             if s not in self._sensor_index_list:
                 continue
             if field_type == 'f':
-                model_name = 'GAN.{}.model'.format(s)
+                model_name = 'GAN.{}.{}.model.hdf5'.format(self._model_id, s)
                 model_filename = os.path.join(self._model_directory, model_name)
                 train_model = True
 
@@ -844,7 +856,7 @@ class MINK:
             if field_type == 'dt' or s == self._label_field_index:
                 continue
             if field_type == 'f':
-                model_name = 'GAN.{}.model'.format(s)
+                model_name = 'GAN.{}.{}.model.h5'.format(self._model_id, s)
                 model_filename = os.path.join(self._model_directory, model_name)
                 model = keras.models.load_model(model_filename)
                 model_list.append(PredictionObject(num_past_events=self._num_past_events,
@@ -1061,8 +1073,16 @@ class MINK:
                             type=int,
                             default=self._gap_size,
                             help='The minimum number of seconds to be considered a gap to impute.')
+        parser.add_argument('--model-id',
+                            dest='model_id',
+                            type=str,
+                            required=False,
+                            default=self._model_id,
+                            help=('An ID you can assign to your models to identify them '
+                                  'separately from other models'))
         args = parser.parse_args()
 
+        self._model_id = args.model_id
         self._gap_size = args.gapsize
         self._config_method = args.method
         self._config_datafile = args.data
