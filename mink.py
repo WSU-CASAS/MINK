@@ -18,6 +18,7 @@ import copy
 from datetime import datetime, timedelta
 import os
 import numpy as np
+import time
 from mobiledata import MobileData
 import joblib
 from sklearn.neural_network import MLPRegressor
@@ -151,6 +152,10 @@ class PredictionGAN(PredictionObject):
         return 0.0
 
 
+def last_time_step_mse(Y_true, Y_pred):
+    return keras.metrics.mean_squared_error(Y_true[:, -1], Y_pred[:, -1])
+
+
 class MINK:
     def __init__(self):
         self.data_fields = collections.OrderedDict()
@@ -161,7 +166,7 @@ class MINK:
         self._has_label_field = False
         self._sensor_index_list = list()
         self._model_directory = 'models'
-        self._num_past_events = 30
+        self._num_past_events = 10
         self._overwrite_existing_models = False
 
         # Definitions
@@ -174,6 +179,7 @@ class MINK:
         self._impute_regrandforest = 'regression_rand_forest'
         self._impute_regsgd = 'regression_sgd'
         self._impute_regdnn = 'regression_dnn'
+        self._impute_wavenet = 'wavenet'
         self._impute_gan = 'gan'
         self._impute_functions = dict({
             self._impute_field_mean: self._impute_func_field_mean,
@@ -184,6 +190,7 @@ class MINK:
             self._impute_regrandforest: self._impute_func_regrandforest,
             self._impute_regsgd: self._impute_func_regsgd,
             self._impute_regdnn: self._impute_func_regdnn,
+            self._impute_wavenet: self._impute_func_wavenet,
             self._impute_gan: self._impute_func_gan})
         self._impute_methods = list(self._impute_functions.keys())
         self._impute_methods.sort()
@@ -192,6 +199,11 @@ class MINK:
         self._config_fulldatafile = None
         self.impute_func = self.impute_missing_values
         return
+
+    @staticmethod
+    def _get_run_logdir():
+        logdir = os.path.join(os.curdir, 'logs', time.strftime('run_%Y_%m_%d-%H_%M_%S'))
+        return logdir
 
     def read_data(self, datafile: str) -> list:
         """ Read and store sensor data from specified file. Assume that each reported
@@ -261,12 +273,13 @@ class MINK:
         segments = list()
 
         # Find first data line with all sensors populated.
+        field_types = list(self.data_fields.values())
         first_index = 0
         for i in range(len(data)):
             first_index = i
             is_full_values = True
             for j in range(len(data[i]) - 1):
-                if data[i][j] is None:
+                if data[i][j] is None and field_types[j] == 'f':
                     is_full_values = False
             if is_full_values:
                 break
@@ -649,6 +662,103 @@ class MINK:
 
         return newdata, dt, missing
 
+    def _impute_func_wavenet(self, data: list, segments: list) -> (list, datetime, list):
+        self._make_model_directory(directory=self._model_directory)
+        model_list = list()
+
+        for s, field_type in enumerate(self.data_fields.values()):
+            if s not in self._sensor_index_list:
+                continue
+            if field_type == 'f':
+                model_name = 'WaveNet.{}.model.h5'.format(s)
+                model_filename = os.path.join(self._model_directory, model_name)
+                train_model = True
+
+                if not self._overwrite_existing_models and os.path.exists(model_filename):
+                    train_model = False
+
+                if train_model:
+                    vector = self._build_sensor_feature_vector_i(data=data,
+                                                                 segments=segments,
+                                                                 index=s)
+
+                    print(vector.shape)
+                    dataset_size = len(vector)
+                    train_size = int(dataset_size * 0.7)
+                    valid_size = train_size + int(dataset_size * 0.2)
+
+                    x_train = vector[:train_size, :self._num_past_events]
+                    y_train = vector[:train_size, -1]
+                    x_valid = vector[train_size:valid_size, :self._num_past_events]
+                    y_valid = vector[train_size:valid_size, -1]
+                    x_test = vector[valid_size:, :self._num_past_events]
+                    y_test = vector[valid_size:, -1]
+
+                    print('training size = {}'.format(train_size))
+                    print(x_train.shape)
+                    print(y_train.shape)
+                    print('validation size = {}'.format(valid_size - train_size))
+                    print(x_valid.shape)
+                    print(y_valid.shape)
+                    print('testing size = {}'.format(dataset_size - valid_size))
+                    print(x_test.shape)
+                    print(y_test.shape)
+
+                    print('Training model: {}'.format(model_name))
+                    length = self._num_past_events
+                    n_features = len(vector[0])
+
+                    model = keras.models.Sequential()
+                    model.add(keras.layers.InputLayer(input_shape=[None, 1]))
+                    for rate in (1, 2, 4, 8) * 2:
+                        model.add(keras.layers.Conv1D(filters=20,
+                                                      kernel_size=2,
+                                                      padding="causal",
+                                                      activation="relu",
+                                                      dilation_rate=rate))
+                    model.add(keras.layers.Conv1D(filters=1, kernel_size=1))
+                    optimizer = keras.optimizers.Adam(learning_rate=0.002)
+                    model.compile(loss="mse",
+                                  optimizer=optimizer,
+                                  metrics=[last_time_step_mse])
+                    run_logdir = self._get_run_logdir()
+                    tensorboard_cb = keras.callbacks.TensorBoard(run_logdir)
+                    history = model.fit(x_train, y_train,
+                                        epochs=10,
+                                        validation_data=(x_valid, y_valid),
+                                        callbacks=[tensorboard_cb])
+
+                    # Save the model to disk.
+                    keras.models.save_model(model=model,
+                                            filepath=model_filename)
+
+                    del vector
+                    del model
+
+        for s, field_type in enumerate(self.data_fields.values()):
+            if field_type == 'dt' or s == self._label_field_index:
+                continue
+            if field_type == 'f':
+                model_name = 'WaveNet.{}.model.h5'.format(s)
+                model_filename = os.path.join(self._model_directory, model_name)
+                model = keras.models.load_model(model_filename)
+                model_list.append(PredictionObject(num_past_events=self._num_past_events,
+                                                   index=s,
+                                                   model=model))
+            else:
+                model_list.append(PredictionDummy(num_past_events=self._num_past_events,
+                                                  index=s))
+
+        # Prime the buffers.
+        for i in range(len(model_list)):
+            model_list[i].load_buffer(data=data)
+
+        newdata, dt, missing = self._populate_from_models(data=data,
+                                                          segments=segments,
+                                                          model_list=model_list)
+
+        return newdata, dt, missing
+
     def _impute_func_gan(self, data: list, segments: list) -> (list, datetime, list):
         self._make_model_directory(directory=self._model_directory)
         model_list = list()
@@ -665,13 +775,37 @@ class MINK:
                     train_model = False
 
                 if train_model:
-                    vector, target = self._build_sensor_feature_vector(data=data,
-                                                                       segments=segments,
-                                                                       index=s)
+                    vector = self._build_sensor_feature_vector_i(data=data,
+                                                                 segments=segments,
+                                                                 index=s)
+
+                    print(vector.shape)
+                    dataset_size = len(vector)
+                    train_size = int(dataset_size * 0.7)
+                    valid_size = train_size + int(dataset_size * 0.2)
+
+                    x_train = vector[:train_size, :self._num_past_events]
+                    y_train = vector[:train_size, -1]
+                    x_valid = vector[train_size:valid_size, :self._num_past_events]
+                    y_valid = vector[train_size:valid_size, -1]
+                    x_test = vector[valid_size:, :self._num_past_events]
+                    y_test = vector[valid_size:, -1]
+
+                    # print(vector[train_size])
+                    print('training size = {}'.format(train_size))
+                    print(x_train.shape)
+                    print(y_train.shape)
+                    print('validation size = {}'.format(valid_size - train_size))
+                    print(x_valid.shape)
+                    print(y_valid.shape)
+                    print('testing size = {}'.format(dataset_size - valid_size))
+                    print(x_test.shape)
+                    print(y_test.shape)
 
                     print('Training model: {}'.format(model_name))
                     length = self._num_past_events
                     n_features = len(vector[0])
+                    """
                     generator = TimeseriesGenerator(data=vector,
                                                     targets=target,
                                                     stride=3,
@@ -686,6 +820,25 @@ class MINK:
 
                     keras.models.save_model(model=model,
                                             filepath=model_filename)
+                    """
+                    model = keras.models.Sequential()
+                    model.add(keras.layers.InputLayer(input_shape=[None, 1]))
+                    for rate in (1, 2, 4, 8) * 2:
+                        model.add(keras.layers.Conv1D(filters=20,
+                                                      kernel_size=2,
+                                                      padding="causal",
+                                                      activation="relu",
+                                                      dilation_rate=rate))
+                    model.add(keras.layers.Conv1D(filters=1, kernel_size=1))
+                    model.compile(loss="mse",
+                                  optimizer="adam",
+                                  metrics=[last_time_step_mse])
+                    history = model.fit(x_train, y_train,
+                                        epochs=20,
+                                        validation_data=(x_valid, y_valid))
+
+                    del vector
+                    del model
 
         for s, field_type in enumerate(self.data_fields.values()):
             if field_type == 'dt' or s == self._label_field_index:
@@ -735,6 +888,7 @@ class MINK:
                     target = np_t
                 else:
                     target = np.hstack((target, np_t))
+            print(vector.shape)
         return vector, target
 
     def _build_feature_vector(self, data: list, index: int):
@@ -760,6 +914,56 @@ class MINK:
             buffer.popleft()
             buffer.append(data[i][index])
         return vector, target
+
+    def _build_sensor_feature_vector_i(self, data: list, segments: list, index: int):
+        vector = None
+
+        for i in range(len(segments)):
+            s_start = segments[i]['first_index']
+            s_end = segments[i]['last_index'] + 1
+            np_v = self._build_feature_vector_i(data=data[s_start:s_end],
+                                                index=index)
+            if np_v is not None:
+                if vector is None:
+                    vector = np_v
+                else:
+                    vector = np.vstack((vector, np_v))
+        return vector
+
+    def _build_feature_vector_i(self, data: list, index: int):
+        length = len(data) - self._num_past_events
+        width = self._num_past_events + 1
+
+        # Check to see if we have enough data to build a feature vector.
+        if length < 1:
+            return None, None
+        vector = np.zeros((length, width, 1))
+        buffer = collections.deque()
+
+        # Populate the sensor buffer.
+        for i in range(width):
+            buffer.append(data[i][index])
+
+        for i in range(width, len(data)):
+            for j in range(width):
+                vector[i - self._num_past_events][j][0] = buffer[j]
+            buffer.popleft()
+            buffer.append(data[i][index])
+        return vector
+
+    def normalize_longitude(self):
+        # -180 to 180
+        return
+
+    def un_normalize_longitude(self):
+        return
+
+    def normalize_latitude(self):
+        # -90 to 90
+        return
+
+    def un_normalize_latitude(self):
+        return
 
     def report_data(self, filename: str, data: list):
         # Create the filename that we want to write to.
