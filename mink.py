@@ -136,6 +136,22 @@ class PredictionRegSGD(PredictionObject):
         return 0.0
 
 
+class PredictionWaveNet(PredictionObject):
+    def __init__(self, num_past_events: int, index: int, model=None):
+        super().__init__(num_past_events=num_past_events,
+                         index=index,
+                         model=model)
+        model.summary()
+        return
+
+    def predict(self, stamp: datetime) -> float:
+        vector = np.zeros((self._num_past_events, 1))
+        for i in range(self._num_past_events):
+            vector[i][0] = self.buffer[i]
+        value = self._model.predict(vector)
+        return value[0]
+
+
 class PredictionGAN(PredictionObject):
     def __init__(self, num_past_events: int, index: int, model=None):
         super().__init__(num_past_events=num_past_events,
@@ -162,6 +178,7 @@ class MINK:
         self.data_fields = collections.OrderedDict()
         self.num_sensors = 16
         self.event_spacing = timedelta(seconds=1.0)
+        self._hz = 1.0
         self._label_field = 'user_activity_label'
         self._label_field_index = -1
         self._has_label_field = False
@@ -172,7 +189,7 @@ class MINK:
         self._model_id = str(uuid.uuid4().hex)
 
         # Definitions
-        self._gap_size = 10
+        self._gap_size = 1
         self._impute_field_mean = 'field_mean'
         self._impute_carry_forward = 'carry_forward'
         self._impute_carry_backward = 'carry_backward'
@@ -183,6 +200,17 @@ class MINK:
         self._impute_regdnn = 'regression_dnn'
         self._impute_wavenet = 'wavenet'
         self._impute_gan = 'gan'
+        self._training_functions = dict({
+            self._impute_field_mean: self._training_func_dummy,
+            self._impute_carry_forward: self._training_func_dummy,
+            self._impute_carry_backward: self._training_func_dummy,
+            self._impute_carry_average: self._training_func_dummy,
+            self._impute_regmlp: self._training_func_regmlp,
+            self._impute_regrandforest: self._training_func_regrandforest,
+            self._impute_regsgd: self._training_func_regsgd,
+            self._impute_regdnn: self._training_func_dummy,
+            self._impute_wavenet: self._training_func_wavenet,
+            self._impute_gan: self._training_func_gan})
         self._impute_functions = dict({
             self._impute_field_mean: self._impute_func_field_mean,
             self._impute_carry_forward: self._impute_func_carry_forward,
@@ -197,9 +225,15 @@ class MINK:
         self._impute_methods = list(self._impute_functions.keys())
         self._impute_methods.sort()
         self._config_method = None
-        self._config_datafile = None
+        self._config_trainingdatafile = None
+        self._config_imputedatafile = None
         self._config_fulldatafile = None
         self.impute_func = self.impute_missing_values
+        self.training_func = self._training_func_dummy
+
+        self._mode_train = False
+        self._mode_impute = False
+        self._mode_evaluate = False
         return
 
     @staticmethod
@@ -258,7 +292,7 @@ class MINK:
         seg_end_stamp = data[segments[0]['last_index']][0]
         seg_size = segments[0]['last_index']
         self.event_spacing = abs(seg_end_stamp - seg_start_stamp) / float(seg_size)
-        print('Extimated spacing between samples:  {}'.format(str(self.event_spacing)))
+        print('Estimated spacing between samples:  {}'.format(str(self.event_spacing)))
         print('\nData Segments:')
         for seg in segments:
             print(str(seg))
@@ -420,6 +454,9 @@ class MINK:
         dt = data[0][0]
         return newdata, dt, missing
 
+    def _training_func_dummy(self, data: list, segments: list):
+        return
+
     def _impute_func_field_mean(self, data: list, segments: list) -> (list, datetime, list):
         gap_values = list()
         # Build a list of the mean of each field
@@ -507,9 +544,8 @@ class MINK:
                                                               gap_values=gap_values)
         return newdata, dt, missing
 
-    def _impute_func_regmlp(self, data: list, segments: list) -> (list, datetime, list):
+    def _training_func_regmlp(self, data: list, segments: list):
         self._make_model_directory(directory=self._model_directory)
-        model_list = list()
 
         for s, field_type in enumerate(self.data_fields.values()):
             if s not in self._sensor_index_list:
@@ -531,7 +567,11 @@ class MINK:
                     model = MLPRegressor().fit(vector, target)
                     joblib.dump(value=model,
                                 filename=model_filename)
+        return
 
+    def _impute_func_regmlp(self, data: list, segments: list) -> (list, datetime, list):
+        self._make_model_directory(directory=self._model_directory)
+        model_list = list()
         for s, field_type in enumerate(self.data_fields.values()):
             if field_type == 'dt' or s == self._label_field_index:
                 continue
@@ -555,9 +595,8 @@ class MINK:
                                                           model_list=model_list)
         return newdata, dt, missing
 
-    def _impute_func_regrandforest(self, data: list, segments: list) -> (list, datetime, list):
+    def _training_func_regrandforest(self, data: list, segments: list):
         self._make_model_directory(directory=self._model_directory)
-        model_list = list()
 
         for s, field_type in enumerate(self.data_fields.values()):
             if s not in self._sensor_index_list:
@@ -582,7 +621,11 @@ class MINK:
                     model.fit(vector, target)
                     joblib.dump(value=model,
                                 filename=model_filename)
+        return
 
+    def _impute_func_regrandforest(self, data: list, segments: list) -> (list, datetime, list):
+        self._make_model_directory(directory=self._model_directory)
+        model_list = list()
         for s, field_type in enumerate(self.data_fields.values()):
             if field_type == 'dt' or s == self._label_field_index:
                 continue
@@ -606,9 +649,8 @@ class MINK:
                                                           model_list=model_list)
         return newdata, dt, missing
 
-    def _impute_func_regsgd(self, data: list, segments: list) -> (list, datetime, list):
+    def _training_func_regsgd(self, data: list, segments: list):
         self._make_model_directory(directory=self._model_directory)
-        model_list = list()
 
         for s, field_type in enumerate(self.data_fields.values()):
             if s not in self._sensor_index_list:
@@ -632,7 +674,11 @@ class MINK:
                     model.fit(vector, target)
                     joblib.dump(value=model,
                                 filename=model_filename)
+        return
 
+    def _impute_func_regsgd(self, data: list, segments: list) -> (list, datetime, list):
+        self._make_model_directory(directory=self._model_directory)
+        model_list = list()
         for s, field_type in enumerate(self.data_fields.values()):
             if field_type == 'dt' or s == self._label_field_index:
                 continue
@@ -664,9 +710,8 @@ class MINK:
 
         return newdata, dt, missing
 
-    def _impute_func_wavenet(self, data: list, segments: list) -> (list, datetime, list):
+    def _training_func_wavenet(self, data: list, segments: list):
         self._make_model_directory(directory=self._model_directory)
-        model_list = list()
 
         for s, field_type in enumerate(self.data_fields.values()):
             if s not in self._sensor_index_list:
@@ -744,7 +789,11 @@ class MINK:
                     #     model_filename,
                     #     custom_objects={'last_time_step_mse': last_time_step_mse})
                     # del model
+        return
 
+    def _impute_func_wavenet(self, data: list, segments: list) -> (list, datetime, list):
+        self._make_model_directory(directory=self._model_directory)
+        model_list = list()
         for s, field_type in enumerate(self.data_fields.values()):
             if field_type == 'dt' or s == self._label_field_index:
                 continue
@@ -754,9 +803,9 @@ class MINK:
                 model = keras.models.load_model(
                     model_filename,
                     custom_objects={'last_time_step_mse': last_time_step_mse})
-                model_list.append(PredictionObject(num_past_events=self._num_past_events,
-                                                   index=s,
-                                                   model=model))
+                model_list.append(PredictionWaveNet(num_past_events=self._num_past_events,
+                                                    index=s,
+                                                    model=model))
             else:
                 model_list.append(PredictionDummy(num_past_events=self._num_past_events,
                                                   index=s))
@@ -771,9 +820,8 @@ class MINK:
 
         return newdata, dt, missing
 
-    def _impute_func_gan(self, data: list, segments: list) -> (list, datetime, list):
+    def _training_func_gan(self, data: list, segments: list):
         self._make_model_directory(directory=self._model_directory)
-        model_list = list()
 
         for s, field_type in enumerate(self.data_fields.values()):
             if s not in self._sensor_index_list:
@@ -851,7 +899,11 @@ class MINK:
 
                     del vector
                     del model
+        return
 
+    def _impute_func_gan(self, data: list, segments: list) -> (list, datetime, list):
+        self._make_model_directory(directory=self._model_directory)
+        model_list = list()
         for s, field_type in enumerate(self.data_fields.values()):
             if field_type == 'dt' or s == self._label_field_index:
                 continue
@@ -1030,22 +1082,46 @@ class MINK:
         self.run_config()
 
         # Now we can do the work!
-        # Read in the data file.
-        data = self.read_data(datafile=self._config_datafile)
-        # Get the complete data segments.
-        segments = self._get_data_segments(data=data)
-        # Print out a quick analysis of the initial data statistics.
-        self.report_data_statistics(data=data,
-                                    segments=segments)
-        # Run the imputation function.
-        newdata, start, missing = self.impute_func(data=data,
-                                                   segments=segments)
-        # Write out the imputed data.
-        self.report_data(filename=self._config_datafile,
-                         data=newdata)
+        # If we have training data, load it up and train the model.
+        if self._mode_train:
+            # Read in the data file.
+            data = self.read_data(datafile=self._config_trainingdatafile)
+            # Get the complete data segments.
+            segments = self._get_data_segments(data=data)
+            # Print out a quick analysis of the initial data statistics.
+            self.report_data_statistics(data=data,
+                                        segments=segments)
+            # Train the models.
+            self.training_func(data=data,
+                               segments=segments)
+            # Clean up after ourselves if we need to do other work still.
+            del data
+            del segments
 
-        if self._config_fulldatafile is not None:
+        # Initialize 'newdata' and 'missing' variables here in case we need it for evaluation.
+        newdata = list()
+        missing = list()
+        # If there is data to impute, read it in and impute.
+        if self._mode_impute:
+            # Read in the data file.
+            data = self.read_data(datafile=self._config_imputedatafile)
+            # Get the complete data segments.
+            segments = self._get_data_segments(data=data)
+            # Print out a quick analysis of the initial data statistics.
+            self.report_data_statistics(data=data,
+                                        segments=segments)
+            # Run the imputation function.
+            newdata, start, missing = self.impute_func(data=data,
+                                                       segments=segments)
+            # Write out the imputed data.
+            self.report_data(filename=self._config_imputedatafile,
+                             data=newdata)
+
+        # If we need to evaluate the imputation performance, do that work here.
+        if self._mode_evaluate:
+            # Read in the data file.
             fulldata = self.read_data(datafile=self._config_fulldatafile)
+            # Evaluate the performance.
             self.evaluate(fulldata=fulldata,
                           imputted_data=newdata,
                           missing=missing)
@@ -1058,16 +1134,24 @@ class MINK:
                             choices=self._impute_methods,
                             required=True,
                             help='Choose the method to use when imputing the missing data values.')
-        parser.add_argument('--data',
-                            dest='data',
+        parser.add_argument('--trainingdata',
+                            dest='trainingdata',
                             type=str,
-                            required=True,
+                            help='The data that will be used to train our models.')
+        parser.add_argument('--imputedata',
+                            dest='imputedata',
+                            type=str,
                             help='The data file with missing data to impute.')
         parser.add_argument('--fulldata',
                             dest='fulldata',
                             type=str,
                             help=('The complete data file to run calculations against the '
                                   'imputed data.'))
+        parser.add_argument('--hz',
+                            dest='hz',
+                            type=float,
+                            default=self._hz,
+                            help='The sampling frequency of the data in Hz.')
         parser.add_argument('--gapsize',
                             dest='gapsize',
                             type=int,
@@ -1082,12 +1166,24 @@ class MINK:
                                   'separately from other models'))
         args = parser.parse_args()
 
+        self._hz = float(args.hz)
+        self.event_spacing = timedelta(seconds=(1.0 / self._hz))
         self._model_id = args.model_id
         self._gap_size = args.gapsize
         self._config_method = args.method
-        self._config_datafile = args.data
+        self._config_trainingdatafile = args.trainingdata
+        self._config_imputedatafile = args.imputedata
         self._config_fulldatafile = args.fulldata
         self.impute_func = self._impute_functions[self._config_method]
+        self.training_func = self._training_functions[self._config_method]
+
+        if self._config_trainingdatafile is not None:
+            self._mode_train = True
+        if self._config_imputedatafile is not None:
+            self._mode_impute = True
+            # Need both the impute file and full data file to evaluate.
+            if self._config_fulldatafile is not None:
+                self._mode_evaluate = True
         return
 
 
