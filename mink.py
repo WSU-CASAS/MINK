@@ -266,7 +266,16 @@ class MINK:
                     self._has_label_field = True
                     self._label_field_index = i
                 i += 1
+            self.replace_none_values(data=data)
         return data
+
+    def replace_none_values(self, data: list):
+        for i in range(len(data)):
+            for j, field_type in enumerate(self.data_fields.values()):
+                if field_type == 'f':
+                    if data[i][j] is None:
+                        data[i][j] = 0.0
+        return
 
     def report_data_statistics(self, data: list, segments: list):
         n = len(data)
@@ -617,7 +626,7 @@ class MINK:
                     print('Training model: {}'.format(model_name))
                     model = RandomForestRegressor(max_depth=20,
                                                   min_samples_split=5,
-                                                  n_jobs=30)
+                                                  n_jobs=10)
                     model.fit(vector, target)
                     joblib.dump(value=model,
                                 filename=model_filename)
@@ -1029,6 +1038,25 @@ class MINK:
     def un_normalize_latitude(self):
         return
 
+    def get_normalized_data(self, data: list) -> list:
+        norm_data = copy.deepcopy(data)
+        for j, field_type in enumerate(self.data_fields.values()):
+            if field_type == 'f':
+                field_min = norm_data[0][j]
+                field_max = norm_data[0][j]
+                # Get the min and max values of the field.
+                for i in range(len(norm_data)):
+                    if norm_data[i][j] < field_min:
+                        field_min = norm_data[i][j]
+                    if norm_data[i][j] > field_max:
+                        field_max = norm_data[i][j]
+                field_min = min(field_min, 0)
+                field_max = max(field_max, 0)
+                denominator = field_max - field_min + 1.0e-7
+                for i in range(len(norm_data)):
+                    norm_data[i][j] = (norm_data[i][j] - field_min) / denominator
+        return norm_data
+
     def report_data(self, filename: str, data: list):
         # Create the filename that we want to write to.
         out_filename = '{}.complete'.format(filename)
@@ -1046,10 +1074,12 @@ class MINK:
         mae_values = np.zeros(len(self.data_fields))
         denominators = np.zeros(len(self.data_fields))
         num_missing = len(missing)
+        norm_fulldata = self.get_normalized_data(data=fulldata)
+        norm_imputted_data = self.get_normalized_data(data=imputted_data)
         for i, field_type in enumerate(self.data_fields.values()):
             if field_type == 'f':
                 field = list()
-                for column in fulldata:
+                for column in norm_fulldata:
                     if column[i] is not None:
                         field.append((column[i]))
                 if len(field) == 0:
@@ -1060,8 +1090,10 @@ class MINK:
         for item in missing:
             for i, field_type in enumerate(self.data_fields.values()):
                 if field_type == 'f':
-                    if fulldata[item][i] is not None and imputted_data[item][i] is not None:
-                        mae_values[i] += np.abs(fulldata[item][i] - imputted_data[item][i])
+                    if norm_fulldata[item][i] is not None \
+                            and norm_imputted_data[item][i] is not None:
+                        mae_values[i] += np.abs(norm_fulldata[item][i]
+                                                - norm_imputted_data[item][i])
         for i, field_type in enumerate(self.data_fields.values()):
             if field_type == 'f':
                 mae_values[i] /= num_missing
