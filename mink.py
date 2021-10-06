@@ -184,7 +184,7 @@ class MINK:
         self._has_label_field = False
         self._sensor_index_list = list()
         self._model_directory = 'models'
-        self._num_past_events = 10
+        self._num_past_events = 100
         self._overwrite_existing_models = False
         self._model_id = str(uuid.uuid4().hex)
 
@@ -624,9 +624,9 @@ class MINK:
                                                                        index=s)
 
                     print('Training model: {}'.format(model_name))
-                    model = RandomForestRegressor(max_depth=20,
+                    model = RandomForestRegressor(max_depth=10,
                                                   min_samples_split=5,
-                                                  n_jobs=10)
+                                                  n_jobs=34)
                     model.fit(vector, target)
                     joblib.dump(value=model,
                                 filename=model_filename)
