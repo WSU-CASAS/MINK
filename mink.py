@@ -1059,7 +1059,7 @@ class MINK:
 
     def report_data(self, filename: str, data: list):
         # Create the filename that we want to write to.
-        out_filename = '{}.complete'.format(filename)
+        out_filename = '{}.imputed.csv'.format(filename)
 
         # Instruct the data layer to write out our imputed data.
         MobileData.write_rows_to_file(file_name=out_filename,
