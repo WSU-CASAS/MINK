@@ -178,7 +178,7 @@ class MINK:
         self.data_fields = collections.OrderedDict()
         self.num_sensors = 16
         self.event_spacing = timedelta(seconds=1.0)
-        self._hz = 1.0
+        self._spacing_seconds = 0.1
         self._label_field = 'user_activity_label'
         self._label_field_index = -1
         self._has_label_field = False
@@ -1179,11 +1179,11 @@ class MINK:
                             type=str,
                             help=('The complete data file to run calculations against the '
                                   'imputed data.'))
-        parser.add_argument('--hz',
-                            dest='hz',
+        parser.add_argument('--spacing',
+                            dest='spacing',
                             type=float,
-                            default=self._hz,
-                            help='The sampling frequency of the data in Hz.')
+                            default=self._spacing_seconds,
+                            help='The spacing between samples in seconds.')
         parser.add_argument('--gapsize',
                             dest='gapsize',
                             type=int,
@@ -1198,8 +1198,8 @@ class MINK:
                                   'separately from other models'))
         args = parser.parse_args()
 
-        self._hz = float(args.hz)
-        self.event_spacing = timedelta(seconds=(1.0 / self._hz))
+        self._spacing_seconds = float(args.spacing)
+        self.event_spacing = timedelta(seconds=self._spacing_seconds)
         self._model_id = args.model_id
         self._gap_size = args.gapsize
         self._config_method = args.method
