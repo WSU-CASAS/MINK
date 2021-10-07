@@ -1202,7 +1202,7 @@ class MINK:
                             help='The spacing between samples in seconds.')
         parser.add_argument('--gapsize',
                             dest='gapsize',
-                            type=int,
+                            type=float,
                             default=self._gap_size,
                             help='The minimum number of seconds to be considered a gap to impute.')
         parser.add_argument('--model-id',
