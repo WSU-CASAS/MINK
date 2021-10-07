@@ -1068,14 +1068,16 @@ class MINK:
                                       mode='w')
         return
 
-    def evaluate(self, fulldata: list, imputted_data: list, missing: list):
+    def evaluate(self, fulldata: list, imputed_data: list, missing: list):
         min_values = np.zeros(len(self.data_fields))
         max_values = np.zeros(len(self.data_fields))
         mae_values = np.zeros(len(self.data_fields))
+        mae_missing = np.zeros(len(self.data_fields))
         denominators = np.zeros(len(self.data_fields))
         num_missing = len(missing)
+        # Get the normalized data.
         norm_fulldata = self.get_normalized_data(data=fulldata)
-        norm_imputted_data = self.get_normalized_data(data=imputted_data)
+        norm_imputed_data = self.get_normalized_data(data=imputed_data)
         for i, field_type in enumerate(self.data_fields.values()):
             if field_type == 'f':
                 field = list()
@@ -1091,22 +1093,36 @@ class MINK:
             for i, field_type in enumerate(self.data_fields.values()):
                 if field_type == 'f':
                     if norm_fulldata[item][i] is not None \
-                            and norm_imputted_data[item][i] is not None:
+                            and norm_imputed_data[item][i] is not None:
+                        # Add the absolute difference between the prediction and actual value.
                         mae_values[i] += np.abs(norm_fulldata[item][i]
-                                                - norm_imputted_data[item][i])
+                                                - norm_imputed_data[item][i])
+                        # We keep track of separate missing count for the fields in case there are
+                        # None values that cause those to be skipped for some fields.
+                        mae_missing[i] += 1.0
         for i, field_type in enumerate(self.data_fields.values()):
             if field_type == 'f':
-                mae_values[i] /= num_missing
-        for i, field_type in enumerate(self.data_fields.values()):
-            if field_type == 'f':
-                if denominators[i] != 0.0:
-                    mae_values[i] = (mae_values[i] - min_values[i]) / denominators[i]
+                if mae_missing[i] != 0.0:
+                    mae_values[i] /= mae_missing[i]
+        # At this point I believe we have the MAE calculated for each individual field.
+        print('MAE values for each normalized field.')
+        for i, field_name in enumerate(self.data_fields.keys()):
+            print('\t{:<30} MAE: {}'.format(field_name, mae_values[i]))
+
+        # The data was normalized before calculating the MAE, so don't need to do it here.
+        # for i, field_type in enumerate(self.data_fields.values()):
+        #     if field_type == 'f':
+        #         if denominators[i] != 0.0:
+        #             mae_values[i] = (mae_values[i] - min_values[i]) / denominators[i]
+
         if num_missing == 0:
             print("No values are missing")
         else:
-            print("Normalized MAE:", np.sum(mae_values) / float(self.num_sensors))
-            for i, field_name in enumerate(self.data_fields.keys()):
-                print('{} MAE: {}'.format(field_name, mae_values[i]))
+            number_float_sensors = 0.0
+            for i, field_type in enumerate(self.data_fields.values()):
+                if field_type == 'f':
+                    number_float_sensors += 1
+            print("Normalized MAE:", np.sum(mae_values) / float(number_float_sensors))
         return
 
     def run(self):
@@ -1155,7 +1171,7 @@ class MINK:
             fulldata = self.read_data(datafile=self._config_fulldatafile)
             # Evaluate the performance.
             self.evaluate(fulldata=fulldata,
-                          imputted_data=newdata,
+                          imputed_data=newdata,
                           missing=missing)
         return
 
