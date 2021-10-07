@@ -187,6 +187,8 @@ class MINK:
         self._num_past_events = 100
         self._overwrite_existing_models = False
         self._model_id = str(uuid.uuid4().hex)
+        # Format for datetime strings:
+        self.datetime_format = '%Y-%m-%d %H:%M:%S.%f'
 
         # Definitions
         self._gap_size = 1
@@ -228,12 +230,14 @@ class MINK:
         self._config_trainingdatafile = None
         self._config_imputedatafile = None
         self._config_fulldatafile = None
+        self._config_ignorefile = None
         self.impute_func = self.impute_missing_values
         self.training_func = self._training_func_dummy
 
         self._mode_train = False
         self._mode_impute = False
         self._mode_evaluate = False
+        self._mode_build_ignorefile = False
         return
 
     @staticmethod
@@ -300,7 +304,7 @@ class MINK:
         seg_start_stamp = data[segments[0]['first_index']][0]
         seg_end_stamp = data[segments[0]['last_index']][0]
         seg_size = segments[0]['last_index']
-        self.event_spacing = abs(seg_end_stamp - seg_start_stamp) / float(seg_size)
+        # self.event_spacing = abs(seg_end_stamp - seg_start_stamp) / float(seg_size)
         print('Estimated spacing between samples:  {}'.format(str(self.event_spacing)))
         print('\nData Segments:')
         for seg in segments:
@@ -313,6 +317,27 @@ class MINK:
         missing = list()
 
         return newdata, dt, missing
+
+    def write_ignore_file(self, segments: list, filename: str):
+        with open(filename, 'w') as output:
+            if len(segments) > 1:
+                for i in range(1, len(segments)):
+                    output.write('{},{}\n'.format(
+                        segments[i-1]['last_stamp'].strftime(self.datetime_format),
+                        segments[i]['first_stamp'].strftime(self.datetime_format)))
+        return
+
+    def read_ignore_file(self, filename: str) -> list:
+        ignore_segments = list()
+        with open(filename) as ignore_file:
+            rows = ignore_file.readlines()
+            for row in rows:
+                stuff = str(str(row).strip()).split(',')
+                ignore_segments.append(dict({
+                    'first_stamp': datetime.strptime(stuff[0], self.datetime_format),
+                    'last_stamp': datetime.strptime(stuff[1], self.datetime_format)
+                    }))
+        return ignore_segments
 
     def _get_data_segments(self, data: list) -> list:
         segments = list()
@@ -1151,6 +1176,8 @@ class MINK:
         missing = list()
         # If there is data to impute, read it in and impute.
         if self._mode_impute:
+            # Load the ignore file.
+            ignore_segments = self.read_ignore_file(filename=self._config_ignorefile)
             # Read in the data file.
             data = self.read_data(datafile=self._config_imputedatafile)
             # Get the complete data segments.
@@ -1167,12 +1194,28 @@ class MINK:
 
         # If we need to evaluate the imputation performance, do that work here.
         if self._mode_evaluate:
+            # Load the ignore file.
+            ignore_segments = self.read_ignore_file(filename=self._config_ignorefile)
             # Read in the data file.
             fulldata = self.read_data(datafile=self._config_fulldatafile)
             # Evaluate the performance.
             self.evaluate(fulldata=fulldata,
                           imputed_data=newdata,
                           missing=missing)
+
+        # Instead we will be building an ignore file.
+        if self._mode_build_ignorefile:
+            # Read in the data file.
+            fulldata = self.read_data(datafile=self._config_fulldatafile)
+            # Get the complete data segments.
+            segments = self._get_data_segments(data=fulldata)
+            # Print out a quick analysis of the initial fulldata statistics so you can be sure
+            # the correct gaps are being ignored.
+            self.report_data_statistics(data=fulldata,
+                                        segments=segments)
+            # Write out the segment gaps to ignore.
+            self.write_ignore_file(segments=segments,
+                                   filename=self._config_ignorefile)
         return
 
     def run_config(self):
@@ -1195,6 +1238,12 @@ class MINK:
                             type=str,
                             help=('The complete data file to run calculations against the '
                                   'imputed data.'))
+        parser.add_argument('--ignorefile',
+                            dest='ignorefile',
+                            type=str,
+                            help=('The file containing the datetime windows that will be ignored '
+                                  'during imputation and evaluation.  This file can be '
+                                  'automatically generated if you use --buildignorefile.'))
         parser.add_argument('--spacing',
                             dest='spacing',
                             type=float,
@@ -1212,6 +1261,14 @@ class MINK:
                             default=self._model_id,
                             help=('An ID you can assign to your models to identify them '
                                   'separately from other models'))
+        parser.add_argument('--buildignorefile',
+                            dest='buildignorefile',
+                            type=bool,
+                            action='store_true',
+                            help=('Instructs the program to automatically generate an ignore file '
+                                  'saved to the filename provided to --ignorefile using the data '
+                                  'provided to --fulldata.  When used the program will generate '
+                                  'the ignore file and then exit.'))
         args = parser.parse_args()
 
         self._spacing_seconds = float(args.spacing)
@@ -1222,6 +1279,8 @@ class MINK:
         self._config_trainingdatafile = args.trainingdata
         self._config_imputedatafile = args.imputedata
         self._config_fulldatafile = args.fulldata
+        self._config_ignorefile = args.ignorefile
+        self._mode_build_ignorefile = args.buildignorefile
         self.impute_func = self._impute_functions[self._config_method]
         self.training_func = self._training_functions[self._config_method]
 
@@ -1232,6 +1291,22 @@ class MINK:
             # Need both the impute file and full data file to evaluate.
             if self._config_fulldatafile is not None:
                 self._mode_evaluate = True
+        if self._mode_build_ignorefile:
+            # This mode requires both fulldatafile and ignorefile.
+            good_to_build = True
+            if self._config_fulldatafile is None:
+                good_to_build = False
+                print('ERROR: --fulldata required for --buildignorefile')
+            if self._config_ignorefile is None:
+                good_to_build = False
+                print('ERROR: --ignorefile required for --buildignorefile')
+            if not good_to_build:
+                parser.print_help()
+                exit()
+            # Set the other modes to False as they won't be run.
+            self._mode_train = False
+            self._mode_impute = False
+            self._mode_evaluate = False
         return
 
 
