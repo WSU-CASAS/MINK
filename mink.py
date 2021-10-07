@@ -1263,7 +1263,6 @@ class MINK:
                                   'separately from other models'))
         parser.add_argument('--buildignorefile',
                             dest='buildignorefile',
-                            type=bool,
                             action='store_true',
                             help=('Instructs the program to automatically generate an ignore file '
                                   'saved to the filename provided to --ignorefile using the data '
