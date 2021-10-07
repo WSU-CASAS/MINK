@@ -384,6 +384,30 @@ class MINK:
         # Return the calculated segments.
         return segments
 
+    @staticmethod
+    def _adjust_ignored_windows_to_segments(segments: list, ignore_segments: list):
+        ign_idx = 0
+        seg_idx_to_del = list()
+        if len(segments) < 2 or len(ignore_segments) < 1:
+            return
+
+        for seg_idx in range(len(segments) - 1):
+            if ignore_segments[ign_idx]['first_stamp'] == segments[seg_idx]['last_stamp']:
+                # We found the start of a gap that needs to be ignored!
+                segments[seg_idx]['last_index'] = segments[seg_idx + 1]['last_index']
+                segments[seg_idx]['last_stamp'] = copy.deepcopy(segments[seg_idx + 1]['last_stamp'])
+                seg_idx_to_del.append(seg_idx + 1)
+                ign_idx += 1
+                if ign_idx >= len(ignore_segments):
+                    break
+
+        # Now to reverse the list of what needs deleting and do so.
+        seg_idx_to_del.reverse()
+        for seg_idx in seg_idx_to_del:
+            print('Deleting segment: {}'.format(str(segments[seg_idx])))
+            del segments[seg_idx]
+        return
+
     def _populate_from_gap_values(self, data: list, segments: list,
                                   gap_values: list) -> (list, datetime, list):
         newdata = list()
@@ -1182,6 +1206,9 @@ class MINK:
             data = self.read_data(datafile=self._config_imputedatafile)
             # Get the complete data segments.
             segments = self._get_data_segments(data=data)
+            # Adjust the ignored segments.
+            self._adjust_ignored_windows_to_segments(segments=segments,
+                                                     ignore_segments=ignore_segments)
             # Print out a quick analysis of the initial data statistics.
             self.report_data_statistics(data=data,
                                         segments=segments)
