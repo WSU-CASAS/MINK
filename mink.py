@@ -735,6 +735,7 @@ class MINK:
         return
 
     def _impute_func_regsgd(self, data: list, segments: list) -> (list, datetime, list):
+        print('_impute_func_regsgd()')
         self._make_model_directory(directory=self._model_directory)
         model_list = list()
         for s, field_type in enumerate(self.data_fields.values()):
@@ -1181,6 +1182,7 @@ class MINK:
         # Now we can do the work!
         # If we have training data, load it up and train the model.
         if self._mode_train:
+            print('Training from data...')
             # Read in the data file.
             data = self.read_data(datafile=self._config_trainingdatafile)
             # Get the complete data segments.
@@ -1200,6 +1202,7 @@ class MINK:
         missing = list()
         # If there is data to impute, read it in and impute.
         if self._mode_impute:
+            print('Imputing missing data...')
             # Load the ignore file.
             ignore_segments = self.read_ignore_file(filename=self._config_ignorefile)
             # Read in the data file.
@@ -1221,6 +1224,7 @@ class MINK:
 
         # If we need to evaluate the imputation performance, do that work here.
         if self._mode_evaluate:
+            print('Evaluating imputed data...')
             # Load the ignore file.
             ignore_segments = self.read_ignore_file(filename=self._config_ignorefile)
             # Read in the data file.
