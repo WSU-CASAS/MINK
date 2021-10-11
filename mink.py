@@ -45,9 +45,12 @@ class PredictionObject:
         self.index = index
         self._model = model
         self.buffer = collections.deque()
+        self.previous_prediction = 0.0
         return
 
     def load_buffer(self, data: list):
+        # Initialize previous_prediction with a real value.
+        self.previous_prediction = data[0][self.index]
         # Populate the sensor buffer.
         if len(self.buffer) < self._num_past_events:
             for i in range(self._num_past_events):
@@ -64,7 +67,11 @@ class PredictionObject:
         for i in range(self._num_past_events):
             vector[0][i] = self.buffer[i]
         vector[0][self._num_past_events] = float(stamp.hour)
+        # print('vector = {}'.format(str(vector)))
         value = self._model.predict(vector)
+        if np.isinf(value[0]) or np.isnan(value[0]):
+            value[0] = self.previous_prediction
+        self.previous_prediction = value[0]
         return value[0]
 
 
@@ -463,6 +470,7 @@ class MINK:
 
     def _populate_from_models(self, data: list, segments: list,
                               model_list: list) -> (list, datetime, list):
+        print('_populate_from_models()')
         newdata = list()
         missing = list()
 
@@ -735,7 +743,6 @@ class MINK:
         return
 
     def _impute_func_regsgd(self, data: list, segments: list) -> (list, datetime, list):
-        print('_impute_func_regsgd()')
         self._make_model_directory(directory=self._model_directory)
         model_list = list()
         for s, field_type in enumerate(self.data_fields.values()):
