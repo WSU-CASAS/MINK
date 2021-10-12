@@ -152,11 +152,16 @@ class PredictionWaveNet(PredictionObject):
         return
 
     def predict(self, stamp: datetime) -> float:
-        vector = np.zeros((self._num_past_events, 1))
+        vector = np.zeros((1, self._num_past_events, 1))
         for i in range(self._num_past_events):
-            vector[i][0] = self.buffer[i]
+            vector[0][i][0] = self.buffer[i]
+        # print('vector shape = {}'.format(vector.shape))
+        # print(str(vector))
         value = self._model.predict(vector)
-        return value[0]
+        # value = self._model(vector)
+        # print('value shape = {}'.format(value.shape))
+        # print(str(value[0][0][0]))
+        return value[0][0][0]
 
 
 class PredictionGAN(PredictionObject):
@@ -486,6 +491,7 @@ class MINK:
         end_stamp = data[0][0]
         stamp_delta = copy.deepcopy(self.event_spacing)
         while current_stamp <= data[-1][0] and data_index < data_length:
+            print(str(current_stamp))
             newpoint = list()
             if waiting_for_gap:
                 newpoint.append(copy.deepcopy(data[data_index][0]))
