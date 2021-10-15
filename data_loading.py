@@ -93,7 +93,7 @@ def real_data_loading(data_name, seq_len):
         ori_data = np.loadtxt('data/stock_data.csv', delimiter=",", skiprows=1)
     elif data_name == 'energy':
         # ori_data = np.loadtxt('data/energy_data.csv', delimiter=",", skiprows=1)
-        ori_data = np.loadtxt('data/sttr001.hour.simple.csv', delimiter=",", skiprows=2)
+        ori_data = np.loadtxt('data/sttr001.test.simple', delimiter=",", skiprows=2)
 
     # Flip the data to make chronological data
     ori_data = ori_data[::-1]

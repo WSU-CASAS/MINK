@@ -10,8 +10,8 @@ from mobiledata import MobileData
 from typing import OrderedDict
 
 
-with MobileData('data/sttr001.train', 'r') as in_data, \
-        MobileData('data/sttr001.train.simple', 'w') as out_data:
+with MobileData('data/sttr001.test', 'r') as in_data, \
+        MobileData('data/sttr001.test.simple', 'w') as out_data:
     # You could use in_data.fields here to get the original headers, and filter for just 'f' ones
     out_fields = collections.OrderedDict({
         'yaw': 'f',
