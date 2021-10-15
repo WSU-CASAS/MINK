@@ -32,6 +32,8 @@ from tensorflow.python.keras.preprocessing.sequence import TimeseriesGenerator
 from tensorflow.python.keras import Sequential
 from tensorflow.python.keras.layers import SimpleRNN, Dense
 
+from minkGAN import MinkGAN
+
 
 class PredictionObject:
     def __init__(self, num_past_events: int, index: int, model):
@@ -165,20 +167,11 @@ class PredictionWaveNet(PredictionObject):
 
 
 class PredictionGAN(PredictionObject):
-    def __init__(self, num_past_events: int, index: int, model=None):
+    def __init__(self, num_past_events: int, model=None):
         super().__init__(num_past_events=num_past_events,
-                         index=index,
+                         index=1,
                          model=model)
         return
-
-    def load_buffer(self, data: list):
-        return
-
-    def add_reading(self, reading):
-        return
-
-    def predict(self, stamp: datetime) -> float:
-        return 0.0
 
 
 def last_time_step_mse(Y_true, Y_pred):
@@ -189,6 +182,7 @@ class MINK:
     def __init__(self):
         self.data_fields = collections.OrderedDict()
         self.num_sensors = 16
+        self.num_float_sensors = 16
         self.event_spacing = timedelta(seconds=1.0)
         self._spacing_seconds = 0.1
         self._label_field = 'user_activity_label'
@@ -269,6 +263,7 @@ class MINK:
 
             # Count the number of sensors.
             self.num_sensors = 0
+            self.num_float_sensors = 0
             i = 0
             # Create a list of just the sensor index positions so we don't have to check for more
             # than float vs string in most of our imputation methods.
@@ -278,6 +273,8 @@ class MINK:
                 if field_name != self._label_field and field_type != 'dt':
                     self.num_sensors += 1
                     self._sensor_index_list.append(i)
+                    if field_type == 'f':
+                        self.num_float_sensors += 1
                 else:
                     self._has_label_field = True
                     self._label_field_index = i
@@ -903,7 +900,7 @@ class MINK:
     def _training_func_gan(self, data: list, segments: list):
         self._make_model_directory(directory=self._model_directory)
 
-        model_name = 'GAN.{}.model.hdf5'.format(self._model_id)
+        model_name = 'GAN.{}.model'.format(self._model_id)
         model_filename = os.path.join(self._model_directory, model_name)
         train_model = True
 
@@ -911,47 +908,35 @@ class MINK:
             train_model = False
 
         if train_model:
+            # TODO Fix this to the new GAN shape requirements.
             vector = self._build_sensor_feature_vector_i(data=data,
                                                          segments=segments,
                                                          index=1)
-
-            print(vector.shape)
-            dataset_size = len(vector)
-            train_size = int(dataset_size * 0.7)
-            valid_size = train_size + int(dataset_size * 0.2)
-
-            x_train = vector[:train_size, :self._num_past_events]
-            y_train = vector[:train_size, -1]
-            x_valid = vector[train_size:valid_size, :self._num_past_events]
-            y_valid = vector[train_size:valid_size, -1]
-            x_test = vector[valid_size:, :self._num_past_events]
-            y_test = vector[valid_size:, -1]
-
-            # print(vector[train_size])
-            print('training size = {}'.format(train_size))
-            print(x_train.shape)
-            print(y_train.shape)
-            print('validation size = {}'.format(valid_size - train_size))
-            print(x_valid.shape)
-            print(y_valid.shape)
-            print('testing size = {}'.format(dataset_size - valid_size))
-            print(x_test.shape)
-            print(y_test.shape)
-
             print('Training model: {}'.format(model_name))
+            model = MinkGAN(seq_len=self._num_past_events)
+            # ASSUME WE HAVE FIXED the format of vector here...
+            model.train_gan(raw_data=vector,
+                            filename=model_filename)
         return
 
     def _impute_func_gan(self, data: list, segments: list) -> (list, datetime, list):
         self._make_model_directory(directory=self._model_directory)
-        model_name = 'GAN.{}.model.h5'.format(self._model_id)
+        model_name = 'GAN.{}.model'.format(self._model_id)
         model_filename = os.path.join(self._model_directory, model_name)
-        model = keras.models.load_model(model_filename)
-        model_obj = PredictionObject(num_past_events=self._num_past_events,
-                                     index=1,
-                                     model=model)
+
+        # Create our GAN model object.
+        model = MinkGAN(seq_len=self._num_past_events)
+        model.load_gan(filename=model_filename)
+
+        # This wrapper class will assist with maintaining the number of past events in the buffer
+        # to use for prediction.
+        model_obj = PredictionGAN(num_past_events=self._num_past_events,
+                                  model=model)
         # Prime the buffers.
         model_obj.load_buffer(data=data)
 
+        # Iterate through the data, filling in as we go.
+        # Returns the filled in data and indexes that were missing (used in evaluation).
         newdata, dt, missing = self._populate_from_gan(data=data,
                                                        segments=segments,
                                                        model=model_obj)
