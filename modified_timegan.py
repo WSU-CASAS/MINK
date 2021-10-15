@@ -1,7 +1,7 @@
 # From https://github.com/stefan-jansen/machine-learning-for-trading/blob/main/21_gans_for_synthetic_time_series/02_TimeGAN_TF2.ipynb
 
 import warnings
-warnings.filterwarnings('ignore')
+# warnings.filterwarnings('ignore')
 
 import pandas as pd
 import numpy as np
@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 gpu_devices = tf.config.experimental.list_physical_devices('GPU')
 if gpu_devices:
     print('Using GPU')
-    tf.config.experimental.set_memory_growth(gpu_devices[0], True)
+    # tf.config.experimental.set_memory_growth(gpu_devices[0], True)
 else:
     print('Using CPU')
 
@@ -341,7 +341,8 @@ for step in range(train_steps):
 
     if step % 1000 == 0:
         print(f'{step:6,.0f} | d_loss: {step_d_loss:6.4f} | g_loss_u: {step_g_loss_u:6.4f} | '
-              f'g_loss_s: {step_g_loss_s:6.4f} | g_loss_v: {step_g_loss_v:6.4f} | e_loss_t0: {step_e_loss_t0:6.4f}')
+              f'g_loss_s: {step_g_loss_s:6.4f} | g_loss_v: {step_g_loss_v:6.4f} | '
+              f'e_loss_t0: {step_e_loss_t0:6.4f}')
 
     with writer.as_default():
         tf.summary.scalar('G Loss S', step_g_loss_s, step=step)
