@@ -526,6 +526,14 @@ class MINK:
         dt = data[0][0]
         return newdata, dt, missing
 
+    def _populate_from_gan(self, data: list, segments: list,
+                           model) -> (list, datetime, list):
+        print('_populate_from_gan()')
+        newdata = list()
+        missing = list()
+        dt = data[0][0]
+        return newdata, dt, missing
+
     def _training_func_dummy(self, data: list, segments: list):
         return
 
@@ -895,108 +903,58 @@ class MINK:
     def _training_func_gan(self, data: list, segments: list):
         self._make_model_directory(directory=self._model_directory)
 
-        for s, field_type in enumerate(self.data_fields.values()):
-            if s not in self._sensor_index_list:
-                continue
-            if field_type == 'f':
-                model_name = 'GAN.{}.{}.model.hdf5'.format(self._model_id, s)
-                model_filename = os.path.join(self._model_directory, model_name)
-                train_model = True
+        model_name = 'GAN.{}.model.hdf5'.format(self._model_id)
+        model_filename = os.path.join(self._model_directory, model_name)
+        train_model = True
 
-                if not self._overwrite_existing_models and os.path.exists(model_filename):
-                    train_model = False
+        if not self._overwrite_existing_models and os.path.exists(model_filename):
+            train_model = False
 
-                if train_model:
-                    vector = self._build_sensor_feature_vector_i(data=data,
-                                                                 segments=segments,
-                                                                 index=s)
+        if train_model:
+            vector = self._build_sensor_feature_vector_i(data=data,
+                                                         segments=segments,
+                                                         index=1)
 
-                    print(vector.shape)
-                    dataset_size = len(vector)
-                    train_size = int(dataset_size * 0.7)
-                    valid_size = train_size + int(dataset_size * 0.2)
+            print(vector.shape)
+            dataset_size = len(vector)
+            train_size = int(dataset_size * 0.7)
+            valid_size = train_size + int(dataset_size * 0.2)
 
-                    x_train = vector[:train_size, :self._num_past_events]
-                    y_train = vector[:train_size, -1]
-                    x_valid = vector[train_size:valid_size, :self._num_past_events]
-                    y_valid = vector[train_size:valid_size, -1]
-                    x_test = vector[valid_size:, :self._num_past_events]
-                    y_test = vector[valid_size:, -1]
+            x_train = vector[:train_size, :self._num_past_events]
+            y_train = vector[:train_size, -1]
+            x_valid = vector[train_size:valid_size, :self._num_past_events]
+            y_valid = vector[train_size:valid_size, -1]
+            x_test = vector[valid_size:, :self._num_past_events]
+            y_test = vector[valid_size:, -1]
 
-                    # print(vector[train_size])
-                    print('training size = {}'.format(train_size))
-                    print(x_train.shape)
-                    print(y_train.shape)
-                    print('validation size = {}'.format(valid_size - train_size))
-                    print(x_valid.shape)
-                    print(y_valid.shape)
-                    print('testing size = {}'.format(dataset_size - valid_size))
-                    print(x_test.shape)
-                    print(y_test.shape)
+            # print(vector[train_size])
+            print('training size = {}'.format(train_size))
+            print(x_train.shape)
+            print(y_train.shape)
+            print('validation size = {}'.format(valid_size - train_size))
+            print(x_valid.shape)
+            print(y_valid.shape)
+            print('testing size = {}'.format(dataset_size - valid_size))
+            print(x_test.shape)
+            print(y_test.shape)
 
-                    print('Training model: {}'.format(model_name))
-                    length = self._num_past_events
-                    n_features = len(vector[0])
-                    """
-                    generator = TimeseriesGenerator(data=vector,
-                                                    targets=target,
-                                                    stride=3,
-                                                    length=length,
-                                                    batch_size=128)
-                    model = Sequential()
-                    model.add(SimpleRNN(100, activation='relu', input_shape=(length, n_features)))
-                    model.add(Dense(100, activation='relu', input_shape=(length, n_features)))
-                    model.add(Dense(1))
-                    model.compile(optimizer='adam', loss="mse")
-                    model.fit(generator)
-
-                    keras.models.save_model(model=model,
-                                            filepath=model_filename)
-                    """
-                    model = keras.models.Sequential()
-                    model.add(keras.layers.InputLayer(input_shape=[None, 1]))
-                    for rate in (1, 2, 4, 8) * 2:
-                        model.add(keras.layers.Conv1D(filters=20,
-                                                      kernel_size=2,
-                                                      padding="causal",
-                                                      activation="relu",
-                                                      dilation_rate=rate))
-                    model.add(keras.layers.Conv1D(filters=1, kernel_size=1))
-                    model.compile(loss="mse",
-                                  optimizer="adam",
-                                  metrics=[last_time_step_mse])
-                    history = model.fit(x_train, y_train,
-                                        epochs=20,
-                                        validation_data=(x_valid, y_valid))
-
-                    del vector
-                    del model
+            print('Training model: {}'.format(model_name))
         return
 
     def _impute_func_gan(self, data: list, segments: list) -> (list, datetime, list):
         self._make_model_directory(directory=self._model_directory)
-        model_list = list()
-        for s, field_type in enumerate(self.data_fields.values()):
-            if field_type == 'dt' or s == self._label_field_index:
-                continue
-            if field_type == 'f':
-                model_name = 'GAN.{}.{}.model.h5'.format(self._model_id, s)
-                model_filename = os.path.join(self._model_directory, model_name)
-                model = keras.models.load_model(model_filename)
-                model_list.append(PredictionObject(num_past_events=self._num_past_events,
-                                                   index=s,
-                                                   model=model))
-            else:
-                model_list.append(PredictionDummy(num_past_events=self._num_past_events,
-                                                  index=s))
-
+        model_name = 'GAN.{}.model.h5'.format(self._model_id)
+        model_filename = os.path.join(self._model_directory, model_name)
+        model = keras.models.load_model(model_filename)
+        model_obj = PredictionObject(num_past_events=self._num_past_events,
+                                     index=1,
+                                     model=model)
         # Prime the buffers.
-        for i in range(len(model_list)):
-            model_list[i].load_buffer(data=data)
+        model_obj.load_buffer(data=data)
 
-        newdata, dt, missing = self._populate_from_models(data=data,
-                                                          segments=segments,
-                                                          model_list=model_list)
+        newdata, dt, missing = self._populate_from_gan(data=data,
+                                                       segments=segments,
+                                                       model=model_obj)
 
         return newdata, dt, missing
 
