@@ -909,9 +909,9 @@ class MINK:
 
         if train_model:
             # TODO Fix this to the new GAN shape requirements.
-            vector = self._build_sensor_feature_vector_i(data=data,
-                                                         segments=segments,
-                                                         index=1)
+            vector = self._build_sensor_feature_vector_gan(data=data,
+                                                           segments=segments,
+                                                           index=1)
             print('Training model: {}'.format(model_name))
             model = MinkGAN(seq_len=self._num_past_events)
             # ASSUME WE HAVE FIXED the format of vector here...
@@ -1010,6 +1010,42 @@ class MINK:
         return vector
 
     def _build_feature_vector_i(self, data: list, index: int):
+        length = len(data) - self._num_past_events
+        width = self._num_past_events + 1
+
+        # Check to see if we have enough data to build a feature vector.
+        if length < 1:
+            return None, None
+        vector = np.zeros((length, width, 1))
+        buffer = collections.deque()
+
+        # Populate the sensor buffer.
+        for i in range(width):
+            buffer.append(data[i][index])
+
+        for i in range(width, len(data)):
+            for j in range(width):
+                vector[i - self._num_past_events][j][0] = buffer[j]
+            buffer.popleft()
+            buffer.append(data[i][index])
+        return vector
+
+    def _build_sensor_feature_vector_gan(self, data: list, segments: list, index: int):
+        vector = None
+
+        for i in range(len(segments)):
+            s_start = segments[i]['first_index']
+            s_end = segments[i]['last_index'] + 1
+            np_v = self._build_feature_vector_gan(data=data[s_start:s_end],
+                                                  index=index)
+            if np_v is not None:
+                if vector is None:
+                    vector = np_v
+                else:
+                    vector = np.vstack((vector, np_v))
+        return vector
+
+    def _build_feature_vector_gan(self, data: list, index: int):
         length = len(data) - self._num_past_events
         width = self._num_past_events + 1
 
