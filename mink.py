@@ -167,11 +167,56 @@ class PredictionWaveNet(PredictionObject):
 
 
 class PredictionGAN(PredictionObject):
-    def __init__(self, num_past_events: int, model=None):
+    def __init__(self, num_past_events: int, data_fields: collections.OrderedDict, model=None):
         super().__init__(num_past_events=num_past_events,
                          index=1,
                          model=model)
+        self.data_fields = data_fields
+        self.float_sensor_idx = list()
+        for i, field_type in enumerate(self.data_fields.values()):
+            if field_type == 'f':
+                self.float_sensor_idx.append(i)
         return
+
+    def load_buffer(self, data: list):
+        # Initialize the sensor buffer.
+        i = 0
+        while i < len(data) and len(self.buffer) < self._num_past_events:
+            self.add_row_to_buffer(row=data[i])
+            i += 1
+        return
+
+    def add_row_to_buffer(self, row):
+        self.buffer.append(list())
+        for sen in self.float_sensor_idx:
+            self.buffer[-1].append(row[sen])
+        return
+
+    def add_reading(self, reading):
+        # reading is a full data row for GANs.
+        self.buffer.popleft()
+        self.add_row_to_buffer(row=reading)
+        return
+
+    def predict(self, stamp: datetime = None) -> list:
+        # Given the current readings we have built up in our buffer, predict the next sequence to
+        # return to the iterating function.
+        vector = np.zeros((self._num_past_events, len(self.float_sensor_idx)))
+        for i in range(self._num_past_events):
+            for j in range(len(self.float_sensor_idx)):
+                vector[i][j] = self.buffer[i][j]
+        # Pass the populated vector to the GAN model.
+        new_sequence = self._model.get_next_sequence(cur_sequence=vector)
+        # Copy the GAN sequence to a 2D list that fits the size and positions of the original data
+        # that we can more easily work with in the populate_from_gan function.
+        new_rows = list()
+        for i in range(len(new_sequence)):
+            new_rows.append(list())
+            for j in range(len(self.data_fields)):
+                new_rows[i].append(None)
+            for j, sen in enumerate(self.float_sensor_idx):
+                new_rows[i][sen] = new_sequence[i][j]
+        return new_rows
 
 
 def last_time_step_mse(Y_true, Y_pred):
@@ -524,10 +569,74 @@ class MINK:
         return newdata, dt, missing
 
     def _populate_from_gan(self, data: list, segments: list,
-                           model) -> (list, datetime, list):
+                           model: PredictionGAN) -> (list, datetime, list):
         print('_populate_from_gan()')
         newdata = list()
         missing = list()
+
+        # Start processing the data
+        generated_sequence = list()
+        point_length = len(data[0])
+        data_length = len(data)
+        model_list_length = len(model.float_sensor_idx)
+        data_index = 0
+        segment_index = 0
+        gap_index = 0
+        waiting_for_gap = True
+        current_stamp = data[0][0]
+        end_stamp = data[0][0]
+        stamp_delta = copy.deepcopy(self.event_spacing)
+        while current_stamp <= data[-1][0] and data_index < data_length:
+            print(str(current_stamp))
+            newpoint = list()
+            if waiting_for_gap:
+                # We are waiting for a gap, which means there is valid data to use and we should
+                # NOT use any generated data. Any generated data is now invalid and should be
+                # cleared.
+                del generated_sequence
+                generated_sequence = list()
+                newpoint.append(copy.deepcopy(data[data_index][0]))
+                if data_index >= segments[segment_index]['last_index']:
+                    if segment_index < (len(segments) - 1):
+                        waiting_for_gap = False
+                        segment_index += 1
+                        current_stamp = copy.deepcopy(data[data_index][0]) + stamp_delta
+                        end_stamp = copy.deepcopy(data[data_index + 1][0])
+                for i in range(1, point_length):
+                    newpoint.append(data[data_index][i])
+                # Add row reading to the model.
+                model.add_reading(reading=data[data_index])
+                # Increment the data_index
+                data_index += 1
+                # Append the populated newpoint to the newdata array.
+                newdata.append(newpoint)
+            else:
+                # Start populating the newpoint with the current_stamp.
+                newpoint.append(copy.deepcopy(current_stamp))
+                if current_stamp < end_stamp:
+                    # Check if we have any current generated sequence that we can use.
+                    if len(generated_sequence) == 0:
+                        # The list is empty, we need more data!
+                        # Get some generated sequences to populate gaps with.
+                        generated_sequence = model.predict()
+                    for i in range(len(generated_sequence[0])):
+                        if i == 0:
+                            continue
+                        newpoint.append(generated_sequence[0][i])
+                    # We are done with sequence-0 so delete it.
+                    del generated_sequence[0]
+                    # Populate the readings in the model so we have more recent data.
+                    model.add_reading(reading=newpoint)
+                    # Add the current missing index for evaluation.
+                    missing.append(len(newdata))
+                    # Increment the stamp by the event spacing.
+                    current_stamp += stamp_delta
+                    # Add the newly assembled datapoint to the filled in data.
+                    newdata.append(newpoint)
+                if current_stamp >= end_stamp:
+                    waiting_for_gap = True
+                    gap_index += 1
+
         dt = data[0][0]
         return newdata, dt, missing
 
@@ -930,6 +1039,7 @@ class MINK:
         # This wrapper class will assist with maintaining the number of past events in the buffer
         # to use for prediction.
         model_obj = PredictionGAN(num_past_events=self._num_past_events,
+                                  data_fields=self.data_fields,
                                   model=model)
         # Prime the buffers.
         model_obj.load_buffer(data=data)
