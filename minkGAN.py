@@ -316,7 +316,7 @@ class MinkGAN:
         self.synthetic_data = tf.keras.models.load_model(filename)
         # Load normalizer
         scaler_filename = os.path.join(filename, "scaler.save")
-        self.scaler = joblib.load(scalar_filename)
+        self.scaler = joblib.load(scaler_filename)
         return
 
     def get_next_sequence(self, cur_sequence: np.ndarray) -> np.ndarray:
