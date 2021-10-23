@@ -1,6 +1,6 @@
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.externals import joblib
+import joblib
 import tensorflow as tf
 from pathlib import Path
 from tqdm import tqdm
