@@ -325,6 +325,7 @@ class MinkGAN:
         if self.use_random_z:
             # Use random data as input
             Z_ = next(self.random_series)
+            print(Z_)
         else:
             # Use given sequence as input (normalized)
             scaled_data = self.scalar.transform(cur_sequence).astype(np.float32)
