@@ -137,7 +137,7 @@ class MinkGAN:
             return tf.sqrt(embedding_loss_t0)
         
         # Autoencoder training loop
-        for step in tqdm(range(train_steps)):
+        for step in tqdm(range(self.train_steps)):
             X_ = next(real_series_iter)
             step_e_loss_t0 = train_autoencoder_init(X_)
         
@@ -158,7 +158,7 @@ class MinkGAN:
             return g_loss_s
         
         # Training loop
-        for step in tqdm(range(train_steps)):
+        for step in tqdm(range(self.train_steps)):
             X_ = next(real_series_iter)
             step_g_loss_s = train_supervisor(X_)
         
@@ -275,7 +275,7 @@ class MinkGAN:
         
         # Training Loop
         step_g_loss_u = step_g_loss_s = step_g_loss_v = step_e_loss_t0 = step_d_loss = 0
-        for step in range(train_steps):
+        for step in range(self.train_steps):
             # Train generator (twice as often as discriminator)
             for kk in range(2):
                 X_ = next(real_series_iter)
