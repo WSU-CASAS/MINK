@@ -318,23 +318,27 @@ class MinkGAN:
         scaler_filename = os.path.join(filename, "scaler.save")
         self.scaler = joblib.load(scaler_filename)
         return
-
+        
     def get_next_sequence(self, cur_sequence: np.ndarray) -> np.ndarray:
         # Given the current sequence of shape (seq_len,  n_seq) representing the currently
         # observed sequence, provide the next sequence of the same shape.
         #next_sequence = np.zeros((self.seq_len, self.n_seq))
         if self.use_random_z:
             # Use random data as input
-            Z_ = (tf.data.Dataset
-                    .from_generator(self._make_random_data, output_types=tf.float32)
-                    .batch(self.batch_size))
+            random_series = iter(tf.data.Dataset
+                             .from_generator(self._make_random_data, output_types=tf.float32)
+                             .batch(self.batch_size)
+                             .repeat())
+            Z_ = next(random_series)
         else:
             # Use given sequence as input (normalized)
             scaled_data = self.scalar.transform(cur_sequence).astype(np.float32)
             data = [scaled_data] # list of only one window
-            Z_ = (tf.data.Dataset
-                  .from_tensor_slices(data)
-                  .batch(self.batch_size))
+            real_series = iter(tf.data.Dataset
+                               .from_tensor_slices(data)
+                               .batch(self.batch_size)
+                               .repeat())
+            Z_ = next(real_series)
         # Generate synthetic sequence
         generated_data = [self.synthetic_data(Z_)] # list of only one window
         generated_data = np.array(np.vstack(generated_data))
