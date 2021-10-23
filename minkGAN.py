@@ -325,7 +325,8 @@ class MinkGAN:
         #next_sequence = np.zeros((self.seq_len, self.n_seq))
         if self.use_random_z:
             # Use random data as input
-            Z_ = [np.random.uniform(low=0, high=1, size=(self.seq_len, self.n_seq))]
+            r = np.random.uniform(low=0, high=1, size=(self.seq_len, self.n_seq))
+            Z_ = r[None,...]
             print(Z_)
         else:
             # Use given sequence as input (normalized)
