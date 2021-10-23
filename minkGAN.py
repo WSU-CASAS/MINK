@@ -30,7 +30,7 @@ class MinkGAN:
 
     def _make_random_data(self):
         while True:
-            yield np.random.uniform(low=0, high=1, size=(seq_len, n_seq))
+            yield np.random.uniform(low=0, high=1, size=(self.seq_len, self.n_seq))
         return
     
     def _check_gpu(self):
@@ -81,8 +81,8 @@ class MinkGAN:
         hidden_dim = 24
         num_layers = 3
         # Input place holders
-        X = Input(shape=[seq_len, n_seq], name='RealData')
-        Z = Input(shape=[seq_len, n_seq], name='RandomData')
+        X = Input(shape=[self.seq_len, self.n_seq], name='RealData')
+        Z = Input(shape=[self.seq_len, self.n_seq], name='RandomData')
         
         # Embedder and Recovery
         embedder = self._make_rnn(n_layers=3,
@@ -91,7 +91,7 @@ class MinkGAN:
                                   name='Embedder')
         recovery = self._make_rnn(n_layers=3,
                                   hidden_units=hidden_dim,
-                                  output_units=n_seq,
+                                  output_units=self.n_seq,
                                   name='Recovery')
         # Generator and Discriminator
         generator = self._make_rnn(n_layers=3,
