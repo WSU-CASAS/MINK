@@ -25,10 +25,6 @@ class MinkGAN:
         self.scaler = None
         self.synthetic_data = None # will hold synthetic data generator model
         self.use_random_z = True # use random (True) or previous sequence (False) as input to model
-        self.random_series = iter(tf.data.Dataset
-                                  .from_generator(self._make_random_data, output_types=tf.float32)
-                                  .batch(self.batch_size)
-                                  .repeat())
         self._check_gpu()
         return
 
@@ -74,6 +70,11 @@ class MinkGAN:
                        .shuffle(buffer_size=n_windows)
                        .batch(self.batch_size))
         real_series_iter = iter(real_series.repeat())
+        
+        random_series = iter(tf.data.Dataset
+                             .from_generator(self._make_random_data, output_types=tf.float32)
+                             .batch(self.batch_size)
+                             .repeat())
         
         # TimeGAN Components
         # Network Parameters
@@ -278,7 +279,7 @@ class MinkGAN:
             # Train generator (twice as often as discriminator)
             for kk in range(2):
                 X_ = next(real_series_iter)
-                Z_ = next(self.random_series)
+                Z_ = next(random_series)
         
                 # Train generator
                 step_g_loss_u, step_g_loss_s, step_g_loss_v = train_generator(X_, Z_)
@@ -286,7 +287,7 @@ class MinkGAN:
                 step_e_loss_t0 = train_embedder(X_)
         
             X_ = next(real_series_iter)
-            Z_ = next(self.random_series)
+            Z_ = next(random_series)
             step_d_loss = get_discriminator_loss(X_, Z_)
             if step_d_loss > 0.15:
                 step_d_loss = train_discriminator(X_, Z_)
@@ -324,17 +325,12 @@ class MinkGAN:
         #next_sequence = np.zeros((self.seq_len, self.n_seq))
         if self.use_random_z:
             # Use random data as input
-            Z_ = next(self.random_series)
+            Z_ = tf.data.Dataset.from_tensors(np.random.uniform(low=0, high=1, size=(self.seq_len, self.n_seq)))
             print(Z_)
         else:
             # Use given sequence as input (normalized)
             scaled_data = self.scalar.transform(cur_sequence).astype(np.float32)
-            data = [scaled_data] # list of only one window
-            real_series = iter(tf.data.Dataset
-                               .from_tensor_slices(data)
-                               .batch(self.batch_size)
-                               .repeat())
-            Z_ = next(real_series)
+            Z_ = tf.data.Dataset.from_tensors(scaled_data)
         # Generate synthetic sequence
         generated_data = [self.synthetic_data(Z_)] # list of only one window
         generated_data = np.array(np.vstack(generated_data))
