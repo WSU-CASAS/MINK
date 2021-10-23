@@ -27,7 +27,7 @@ class MinkGAN:
         self.use_random_z = True # use random (True) or previous sequence (False) as input to model
         self._check_gpu()
         return
-    
+
     def _make_random_data(self):
         while True:
             yield np.random.uniform(low=0, high=1, size=(seq_len, n_seq))
