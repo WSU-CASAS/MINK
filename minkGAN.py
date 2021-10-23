@@ -68,7 +68,7 @@ class MinkGAN:
         real_series = (tf.data.Dataset
                        .from_tensor_slices(data)
                        .shuffle(buffer_size=n_windows)
-                       .batch(batch_size))
+                       .batch(self.batch_size))
         real_series_iter = iter(real_series.repeat())
         # Set up random series generator
         random_series = iter(tf.data.Dataset
