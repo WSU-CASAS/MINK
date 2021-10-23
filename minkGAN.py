@@ -16,7 +16,7 @@ class MinkGAN:
     def __init__(self, seq_len: int):
         self.seq_len = seq_len
         self.batch_size = 128
-        self.train_steps = 100 # Set to 10000 for production
+        self.train_steps = 1000 # Set to 10000 for production
         self.columns = list(['yaw', 'pitch', 'roll', 'rotation_rate_x', 'rotation_rate_y',
                              'rotation_rate_z', 'user_acceleration_x', 'user_acceleration_y',
                              'user_acceleration_z', 'latitude', 'longitude', 'altitude', 'course',
