@@ -24,7 +24,7 @@ class MinkGAN:
         self.n_seq = len(self.columns)
         self.scaler = None
         self.synthetic_data = None # will hold synthetic data generator model
-        self.use_random_z = False # use random (True) or previous sequence (False) as input to model
+        self.use_random_z = True # use random (True) or previous sequence (False) as input to model
         self._check_gpu()
         return
 
