@@ -39,7 +39,6 @@ class MinkGAN:
             print('Using GPU')
         else:
             print('Using CPU')
-        return
     
     def _make_rnn(self, n_layers, hidden_units, output_units, name):
         return Sequential([GRU(units=hidden_units,
