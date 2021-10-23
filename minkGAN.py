@@ -60,8 +60,8 @@ class MinkGAN:
         
         # Create rolling window sequences
         data = []
-        for i in range(len(raw_data) - seq_len):
-            data.append(scaled_data[i:i + seq_len])
+        for i in range(len(raw_data) - self.seq_len):
+            data.append(scaled_data[i:i + self.seq_len])
         n_windows = len(data)
 
         # Create tf.data.Dataset
