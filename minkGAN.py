@@ -304,6 +304,7 @@ class MinkGAN:
     def save_gan(self, filename: str):
         # Save the trained generator to disk.  We will need that later for imputing data.
         # Save model
+        self.synthetic_data.compile()
         self.synthetic_data.save(filename)
         # Save normalizer
         scaler_filename = os.path.join(filename, "scaler.save")
