@@ -325,14 +325,12 @@ class MinkGAN:
         #next_sequence = np.zeros((self.seq_len, self.n_seq))
         if self.use_random_z:
             # Use random data as input
-            r = np.random.uniform(low=0, high=1, size=(self.seq_len, self.n_seq))
-            Z_ = r[None,...]
-            print("We're here")
-            print(Z_)
+            random_data = np.random.uniform(low=0, high=1, size=(self.seq_len, self.n_seq))
+            Z_ = random_data[None,...]
         else:
             # Use given sequence as input (normalized)
             scaled_data = self.scalar.transform(cur_sequence).astype(np.float32)
-            Z_ = tf.data.Dataset.from_tensors(scaled_data)
+            Z_ = scaled_data[None,...]
         # Generate synthetic sequence
         generated_data = [self.synthetic_data(Z_)] # list of only one window
         generated_data = np.array(np.vstack(generated_data))
