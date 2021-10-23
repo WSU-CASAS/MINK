@@ -313,7 +313,7 @@ class MinkGAN:
     def load_gan(self, filename: str):
         # Load the saved generator so we can generate data.
         # Load model
-        self.synthetic_data = tf.keras.model.load_model(filename)
+        self.synthetic_data = tf.keras.models.load_model(filename)
         # Load normalizer
         scaler_filename = os.path.join(filename, "scaler.save")
         self.scaler = joblib.load(scalar_filename)
