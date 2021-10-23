@@ -329,7 +329,7 @@ class MinkGAN:
             Z_ = random_data[None,...]
         else:
             # Use given sequence as input (normalized)
-            scaled_data = self.scalar.transform(cur_sequence).astype(np.float32)
+            scaled_data = self.scaler.transform(cur_sequence).astype(np.float32)
             Z_ = scaled_data[None,...]
         # Generate synthetic sequence
         generated_data = [self.synthetic_data(Z_)] # list of only one window
