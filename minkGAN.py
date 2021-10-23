@@ -216,7 +216,7 @@ class MinkGAN:
                 h_hat_supervised = supervisor(h)
                 generator_loss_supervised = mse(h[:, 1:, :], h_hat_supervised[:, 1:, :])
         
-                x_hat = synthetic_data(z)
+                x_hat = self.synthetic_data(z)
                 generator_moment_loss = get_generator_moment_loss(x, x_hat)
         
                 generator_loss = (generator_loss_unsupervised +
