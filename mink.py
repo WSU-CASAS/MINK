@@ -328,11 +328,16 @@ class MINK:
         return data
 
     def replace_none_values(self, data: list):
+        test = np.zeros((1))
         for i in range(len(data)):
             for j, field_type in enumerate(self.data_fields.values()):
                 if field_type == 'f':
                     if data[i][j] is None:
                         data[i][j] = 0.0
+                    else:
+                        test[0] = data[i][j]
+                        if np.isinf(test[0]) or np.isnan(test[0]):
+                            data[i][j] = 0.0
         return
 
     def report_data_statistics(self, data: list, segments: list):
@@ -533,7 +538,7 @@ class MINK:
         end_stamp = data[0][0]
         stamp_delta = copy.deepcopy(self.event_spacing)
         while current_stamp <= data[-1][0] and data_index < data_length:
-            print(str(current_stamp))
+            # print(str(current_stamp))
             newpoint = list()
             if waiting_for_gap:
                 newpoint.append(copy.deepcopy(data[data_index][0]))
@@ -1190,7 +1195,7 @@ class MINK:
 
     def report_data(self, filename: str, data: list):
         # Create the filename that we want to write to.
-        out_filename = '{}.imputed.csv'.format(filename)
+        out_filename = '{}.{}.imputed.csv'.format(filename, self._config_method)
 
         # Instruct the data layer to write out our imputed data.
         MobileData.write_rows_to_file(file_name=out_filename,
@@ -1284,6 +1289,11 @@ class MINK:
         # If there is data to impute, read it in and impute.
         if self._mode_impute:
             print('Imputing missing data...')
+            # Check if output data file already exists.
+            out_filename = '{}.{}.imputed.csv'.format(self._config_imputedatafile, self._config_method)
+            if os.path.exists(out_filename):
+                print('Imputed file already exists, exiting this evaluation.')
+                exit()
             # Load the ignore file.
             ignore_segments = self.read_ignore_file(filename=self._config_ignorefile)
             # Read in the data file.
