@@ -235,7 +235,7 @@ class MINK:
         self._has_label_field = False
         self._sensor_index_list = list()
         self._model_directory = 'models'
-        self._num_past_events = 100
+        self._num_past_events = 26
         self._overwrite_existing_models = False
         self._model_id = str(uuid.uuid4().hex)
         # Format for datetime strings:
@@ -1020,6 +1020,7 @@ class MINK:
             # Assemble the source data for the GAN.
             print('Gathering training data.')
             vector = self._build_feature_vector_gan(data=data)
+            del data
             print('Training model: {}'.format(model_name))
             model = MinkGAN(seq_len=self._num_past_events)
             # Now we can train the GAN with our corrected training data.
@@ -1150,8 +1151,8 @@ class MINK:
 
         # A little brute force, there is probably a better way with numpy that I don't know of.
         for i in range(len(data)):
-            for sen in float_sensor_indexes:
-                vector[i][sen] = data[i][sen]
+            for j, sen in enumerate(float_sensor_indexes):
+                vector[i][j] = data[i][sen]
 
         return vector
 
