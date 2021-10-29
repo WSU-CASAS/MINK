@@ -235,7 +235,7 @@ class MINK:
         self._has_label_field = False
         self._sensor_index_list = list()
         self._model_directory = 'models'
-        self._num_past_events = 26
+        self._num_past_events = 100
         self._overwrite_existing_models = False
         self._model_id = str(uuid.uuid4().hex)
         # Format for datetime strings:
@@ -1377,6 +1377,12 @@ class MINK:
                             type=float,
                             default=self._gap_size,
                             help='The minimum number of seconds to be considered a gap to impute.')
+        parser.add_argument('--seqlen',
+                            dest='seqlen',
+                            type=int,
+                            default=self._num_past_events,
+                            help='The length of the training sequence length. default={}.'.format(
+                                self._num_past_events))
         parser.add_argument('--model-id',
                             dest='model_id',
                             type=str,
@@ -1397,6 +1403,7 @@ class MINK:
         self.event_spacing = timedelta(seconds=self._spacing_seconds)
         self._model_id = args.model_id
         self._gap_size = args.gapsize
+        self._num_past_events = args.seqlen
         self._config_method = args.method
         self._config_trainingdatafile = args.trainingdata
         self._config_imputedatafile = args.imputedata
