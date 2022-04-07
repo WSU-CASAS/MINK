@@ -247,6 +247,7 @@ class MINK:
         self._impute_carry_forward = 'carry_forward'
         self._impute_carry_backward = 'carry_backward'
         self._impute_carry_average = 'carry_average'
+        self._impute_zero_fill = 'zero_fill'
         self._impute_regmlp = 'regression_mlp'
         self._impute_regrandforest = 'regression_rand_forest'
         self._impute_regsgd = 'regression_sgd'
@@ -258,6 +259,7 @@ class MINK:
             self._impute_carry_forward: self._training_func_dummy,
             self._impute_carry_backward: self._training_func_dummy,
             self._impute_carry_average: self._training_func_dummy,
+            self._impute_zero_fill: self._training_func_dummy,
             self._impute_regmlp: self._training_func_regmlp,
             self._impute_regrandforest: self._training_func_regrandforest,
             self._impute_regsgd: self._training_func_regsgd,
@@ -269,6 +271,7 @@ class MINK:
             self._impute_carry_forward: self._impute_func_carry_forward,
             self._impute_carry_backward: self._impute_func_carry_backward,
             self._impute_carry_average: self._impute_func_carry_average,
+            self._impute_zero_fill: self._impute_func_zero_fill,
             self._impute_regmlp: self._impute_func_regmlp,
             self._impute_regrandforest: self._impute_func_regrandforest,
             self._impute_regsgd: self._impute_func_regsgd,
@@ -280,6 +283,7 @@ class MINK:
         self._config_method = None
         self._config_trainingdatafile = None
         self._config_imputedatafile = None
+        self._config_evaldatafile = None
         self._config_fulldatafile = None
         self._config_ignorefile = None
         self.impute_func = self.impute_missing_values
@@ -302,6 +306,7 @@ class MINK:
         x/y/z acceleration, latitude, longitude, altitude, course, speed,
         horizontal accuracy, and vertical accuracy.
         """
+        print('read_data({})'.format(datafile))
         with MobileData(file_path=datafile, mode='r') as in_data:
             self.data_fields = copy.deepcopy(in_data.fields)
             data = in_data.read_all_rows()
@@ -367,7 +372,11 @@ class MINK:
         print('Estimated spacing between samples:  {}'.format(str(self.event_spacing)))
         print('\nData Segments:')
         for seg in segments:
-            print(str(seg))
+            print('first_index: {}  last_index: {}  first_stamp: {}  last_stamp: {}'.format(
+                seg['first_index'],
+                seg['last_index'],
+                str(seg['first_stamp']),
+                str(seg['last_stamp'])))
         return
 
     def impute_missing_values(self, data: list, segments: list) -> (list, datetime, list):
@@ -452,9 +461,12 @@ class MINK:
 
         for seg_idx in range(len(segments) - 1):
             if ignore_segments[ign_idx]['first_stamp'] == segments[seg_idx]['last_stamp']:
+                print('ignore_segment: {}'.format(str(ignore_segments[ign_idx])))
+                print('matched segment: {}'.format(str(segments[seg_idx])))
                 # We found the start of a gap that needs to be ignored!
                 segments[seg_idx]['last_index'] = segments[seg_idx + 1]['last_index']
                 segments[seg_idx]['last_stamp'] = copy.deepcopy(segments[seg_idx + 1]['last_stamp'])
+                print('updated segment: {}'.format(str(segments[seg_idx])))
                 seg_idx_to_del.append(seg_idx + 1)
                 ign_idx += 1
                 if ign_idx >= len(ignore_segments):
@@ -466,6 +478,52 @@ class MINK:
             print('Deleting segment: {}'.format(str(segments[seg_idx])))
             del segments[seg_idx]
         return
+
+    def fake_impute_func(self, data: list, segments: list) -> (list, datetime, list):
+        newdata = list()
+        start = datetime.now()
+        missing = list()
+
+        # Start processing the data
+        point_length = len(data[0])
+        data_length = len(data)
+        data_index = 0
+        segment_index = 0
+        gap_index = 0
+        waiting_for_gap = True
+        current_stamp = data[0][0]
+        end_stamp = data[0][0]
+        stamp_delta = copy.deepcopy(self.event_spacing)
+        while current_stamp <= data[-1][0] and data_index < data_length:
+            newpoint = list()
+            if waiting_for_gap:
+                # print('stamp = {}'.format(str(data[data_index][0])))
+                newpoint.append(copy.deepcopy(data[data_index][0]))
+                if data_index >= segments[segment_index]['last_index']:
+                    if segment_index < (len(segments) - 1):
+                        waiting_for_gap = False
+                        segment_index += 1
+                        current_stamp = copy.deepcopy(data[data_index][0]) + stamp_delta
+                        end_stamp = copy.deepcopy(data[data_index + 1][0])
+                for i in range(1, point_length):
+                    newpoint.append(data[data_index][i])
+                data_index += 1
+                newdata.append(newpoint)
+            else:
+                # print('current_stamp={}'.format(str(current_stamp)))
+                newpoint.append(copy.deepcopy(current_stamp))
+                if current_stamp < end_stamp:
+                    for i in self._sensor_index_list:
+                        newpoint.append(0.0)
+                    if self._has_label_field:
+                        newpoint.append(None)
+                    missing.append(len(newdata))
+                    current_stamp += stamp_delta
+                    newdata.append(newpoint)
+                if current_stamp >= end_stamp:
+                    waiting_for_gap = True
+                    gap_index += 1
+        return newdata, start, missing
 
     def _populate_from_gap_values(self, data: list, segments: list,
                                   gap_values: list) -> (list, datetime, list):
@@ -727,6 +785,21 @@ class MINK:
                     sensor_values.append(value)
                 else:
                     sensor_values.append(None)
+            gap_values.append(copy.deepcopy(sensor_values))
+            del sensor_values
+
+        newdata, dt, missing = self._populate_from_gap_values(data=data,
+                                                              segments=segments,
+                                                              gap_values=gap_values)
+        return newdata, dt, missing
+
+    def _impute_func_zero_fill(self, data: list, segments: list) -> (list, datetime, list):
+        gap_values = list()
+        for i in range(1, len(segments)):
+            sensor_values = list()
+            for s in self._sensor_index_list:
+                value = 0.0
+                sensor_values.append(value)
             gap_values.append(copy.deepcopy(sensor_values))
             del sensor_values
 
@@ -1301,6 +1374,8 @@ class MINK:
             data = self.read_data(datafile=self._config_imputedatafile)
             # Get the complete data segments.
             segments = self._get_data_segments(data=data)
+            self.report_data_statistics(data=data,
+                                        segments=segments)
             # Adjust the ignored segments.
             self._adjust_ignored_windows_to_segments(segments=segments,
                                                      ignore_segments=ignore_segments)
@@ -1319,12 +1394,56 @@ class MINK:
             print('Evaluating imputed data...')
             # Load the ignore file.
             ignore_segments = self.read_ignore_file(filename=self._config_ignorefile)
-            # Read in the data file.
-            fulldata = self.read_data(datafile=self._config_fulldatafile)
-            # Evaluate the performance.
-            self.evaluate(fulldata=fulldata,
-                          imputed_data=newdata,
-                          missing=missing)
+            # Load in imputed data if we are just looking at the evaluation.
+            if len(newdata) == 0 and self._config_evaldatafile is not None:
+                # Read in the data file.
+                data = self.read_data(datafile=self._config_imputedatafile)
+                print('len(data)={}'.format(len(data)))
+                # Get the complete data segments.
+                segments = self._get_data_segments(data=data)
+                # Adjust the ignored segments.
+                self._adjust_ignored_windows_to_segments(segments=segments,
+                                                         ignore_segments=ignore_segments)
+                # Print out a quick analysis of the initial data statistics.
+                self.report_data_statistics(data=data,
+                                            segments=segments)
+                # Run the fake imputation function to build the missing list.
+                newdata, start, missing = self.fake_impute_func(data=data,
+                                                                segments=segments)
+                print('len(newdata)={}'.format(len(newdata)))
+                # Read in the data file.
+                evaldata = self.read_data(datafile=self._config_evaldatafile)
+                # Get the complete data segments.
+                segments = self._get_data_segments(data=evaldata)
+                # Adjust the ignored segments.
+                self._adjust_ignored_windows_to_segments(segments=segments,
+                                                         ignore_segments=ignore_segments)
+                # Print out a quick analysis of the initial data statistics.
+                self.report_data_statistics(data=evaldata,
+                                            segments=segments)
+                print('len(evaldata)={}'.format(len(evaldata)))
+                # Read in the data file.
+                fulldata = self.read_data(datafile=self._config_fulldatafile)
+                # Get the complete data segments.
+                segments = self._get_data_segments(data=fulldata)
+                # Adjust the ignored segments.
+                self._adjust_ignored_windows_to_segments(segments=segments,
+                                                         ignore_segments=ignore_segments)
+                # Print out a quick analysis of the initial data statistics.
+                self.report_data_statistics(data=fulldata,
+                                            segments=segments)
+                print('len(fulldata)={}'.format(len(fulldata)))
+                # Evaluate the performance.
+                self.evaluate(fulldata=fulldata,
+                              imputed_data=evaldata,
+                              missing=missing)
+            else:
+                # Read in the data file.
+                fulldata = self.read_data(datafile=self._config_fulldatafile)
+                # Evaluate the performance.
+                self.evaluate(fulldata=fulldata,
+                              imputed_data=newdata,
+                              missing=missing)
 
         # Instead we will be building an ignore file.
         if self._mode_build_ignorefile:
@@ -1356,6 +1475,10 @@ class MINK:
                             dest='imputedata',
                             type=str,
                             help='The data file with missing data to impute.')
+        parser.add_argument('--evaldata',
+                            dest='evaldata',
+                            type=str,
+                            help='The imputed data file to evaluation with fulldata.')
         parser.add_argument('--fulldata',
                             dest='fulldata',
                             type=str,
@@ -1407,6 +1530,7 @@ class MINK:
         self._config_method = args.method
         self._config_trainingdatafile = args.trainingdata
         self._config_imputedatafile = args.imputedata
+        self._config_evaldatafile = args.evaldata
         self._config_fulldatafile = args.fulldata
         self._config_ignorefile = args.ignorefile
         self._mode_build_ignorefile = args.buildignorefile
@@ -1420,6 +1544,9 @@ class MINK:
             # Need both the impute file and full data file to evaluate.
             if self._config_fulldatafile is not None:
                 self._mode_evaluate = True
+        if self._config_evaldatafile is not None and self._config_fulldatafile is not None:
+            self._mode_impute = False
+            self._mode_evaluate = True
         if self._mode_build_ignorefile:
             # This mode requires both fulldatafile and ignorefile.
             good_to_build = True
