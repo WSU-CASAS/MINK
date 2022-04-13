@@ -27,6 +27,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import SGDRegressor
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
+from sklearn.neighbors import KNeighborsRegressor
 from tensorflow import keras
 from tensorflow.python.keras.preprocessing.sequence import TimeseriesGenerator
 from tensorflow.python.keras import Sequential
@@ -253,6 +254,7 @@ class MINK:
         self._impute_regsgd = 'regression_sgd'
         self._impute_regdnn = 'regression_dnn'
         self._impute_wavenet = 'wavenet'
+        self._impute_knn = 'knn'
         self._impute_gan = 'gan'
         self._training_functions = dict({
             self._impute_field_mean: self._training_func_dummy,
@@ -265,6 +267,7 @@ class MINK:
             self._impute_regsgd: self._training_func_regsgd,
             self._impute_regdnn: self._training_func_dummy,
             self._impute_wavenet: self._training_func_wavenet,
+            self._impute_knn: self._training_func_knn,
             self._impute_gan: self._training_func_gan})
         self._impute_functions = dict({
             self._impute_field_mean: self._impute_func_field_mean,
@@ -277,6 +280,7 @@ class MINK:
             self._impute_regsgd: self._impute_func_regsgd,
             self._impute_regdnn: self._impute_func_regdnn,
             self._impute_wavenet: self._impute_func_wavenet,
+            self._impute_knn: self._impute_func_knn,
             self._impute_gan: self._impute_func_gan})
         self._impute_methods = list(self._impute_functions.keys())
         self._impute_methods.sort()
@@ -1082,6 +1086,65 @@ class MINK:
                                                           segments=segments,
                                                           model_list=model_list)
 
+        return newdata, dt, missing
+
+    def _training_func_knn(self, data: list, segments: list):
+        self._make_model_directory(directory=self._model_directory)
+
+        for s, field_type in enumerate(self.data_fields.values()):
+            if s not in self._sensor_index_list:
+                continue
+            if field_type == 'f':
+                model_name = 'KNN.{}.{}.model'.format(self._model_id, s)
+                model_filename = os.path.join(self._model_directory, model_name)
+                train_model = True
+
+                if not self._overwrite_existing_models and os.path.exists(model_filename):
+                    train_model = False
+
+                if train_model:
+                    vector, target = self._build_sensor_feature_vector(data=data,
+                                                                       segments=segments,
+                                                                       index=s)
+
+                    print('Training model: {}'.format(model_name))
+                    model = KNeighborsRegressor(n_neighbors=5,
+                                                weights='uniform',
+                                                algorithm='auto',
+                                                leaf_size=30,
+                                                p=2,
+                                                metric='minkowski',
+                                                metric_params=None,
+                                                n_jobs=35)
+                    model.fit(vector, target)
+                    joblib.dump(value=model,
+                                filename=model_filename)
+        return
+
+    def _impute_func_knn(self, data: list, segments: list) -> (list, datetime, list):
+        self._make_model_directory(directory=self._model_directory)
+        model_list = list()
+        for s, field_type in enumerate(self.data_fields.values()):
+            if field_type == 'dt' or s == self._label_field_index:
+                continue
+            if field_type == 'f':
+                model_name = 'KNN.{}.{}.model'.format(self._model_id, s)
+                model_filename = os.path.join(self._model_directory, model_name)
+                model = joblib.load(model_filename)
+                model_list.append(PredictionObject(num_past_events=self._num_past_events,
+                                                   index=s,
+                                                   model=model))
+            else:
+                model_list.append(PredictionDummy(num_past_events=self._num_past_events,
+                                                  index=s))
+
+        # Prime the buffers.
+        for i in range(len(model_list)):
+            model_list[i].load_buffer(data=data)
+
+        newdata, dt, missing = self._populate_from_models(data=data,
+                                                          segments=segments,
+                                                          model_list=model_list)
         return newdata, dt, missing
 
     def _training_func_gan(self, data: list, segments: list):
