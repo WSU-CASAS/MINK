@@ -16,15 +16,15 @@ class MinkMSGAN:
     def __init__(self, seq_len: int):
         self.seq_len = seq_len
         self.batch_size = 128
-        self.train_steps = 10000 # Set to 10000 for production
+        self.train_steps = 10000  # Set to 10000 for production
         self.columns = list(['yaw', 'pitch', 'roll', 'rotation_rate_x', 'rotation_rate_y',
                              'rotation_rate_z', 'user_acceleration_x', 'user_acceleration_y',
                              'user_acceleration_z', 'latitude', 'longitude', 'altitude', 'course',
                              'speed', 'horizontal_accuracy', 'vertical_accuracy'])
         self.n_seq = len(self.columns)
         self.scaler = None
-        self.synthetic_data = None # will hold synthetic data generator model
-        self.use_random_z = True # use random (True) or previous sequence (False) as input to model
+        self.synthetic_data = None  # will hold synthetic data generator model
+        self.use_random_z = False  # use random(True) or previous sequence(False) as input to model
         self._check_gpu()
         return
 
