@@ -34,6 +34,7 @@ from tensorflow.python.keras import Sequential
 from tensorflow.python.keras.layers import SimpleRNN, Dense
 
 from minkGAN import MinkGAN
+from minkMSGAN import MinkMSGAN
 
 
 class PredictionObject:
@@ -256,6 +257,7 @@ class MINK:
         self._impute_wavenet = 'wavenet'
         self._impute_knn = 'knn'
         self._impute_gan = 'gan'
+        self._impute_msgan = 'ms_gan'
         self._training_functions = dict({
             self._impute_field_mean: self._training_func_dummy,
             self._impute_carry_forward: self._training_func_dummy,
@@ -268,7 +270,8 @@ class MINK:
             self._impute_regdnn: self._training_func_dummy,
             self._impute_wavenet: self._training_func_wavenet,
             self._impute_knn: self._training_func_knn,
-            self._impute_gan: self._training_func_gan})
+            self._impute_gan: self._training_func_gan,
+            self._impute_msgan: self._training_func_msgan})
         self._impute_functions = dict({
             self._impute_field_mean: self._impute_func_field_mean,
             self._impute_carry_forward: self._impute_func_carry_forward,
@@ -281,7 +284,8 @@ class MINK:
             self._impute_regdnn: self._impute_func_regdnn,
             self._impute_wavenet: self._impute_func_wavenet,
             self._impute_knn: self._impute_func_knn,
-            self._impute_gan: self._impute_func_gan})
+            self._impute_gan: self._impute_func_gan,
+            self._impute_msgan: self._impute_msgan})
         self._impute_methods = list(self._impute_functions.keys())
         self._impute_methods.sort()
         self._config_method = None
@@ -1176,6 +1180,53 @@ class MINK:
 
         # Create our GAN model object.
         model = MinkGAN(seq_len=self._num_past_events)
+        model.load_gan(filename=model_filename)
+
+        # This wrapper class will assist with maintaining the number of past events in the buffer
+        # to use for prediction.
+        model_obj = PredictionGAN(num_past_events=self._num_past_events,
+                                  data_fields=self.data_fields,
+                                  model=model)
+        # Prime the buffers.
+        model_obj.load_buffer(data=data)
+
+        # Iterate through the data, filling in as we go.
+        # Returns the filled in data and indexes that were missing (used in evaluation).
+        newdata, dt, missing = self._populate_from_gan(data=data,
+                                                       segments=segments,
+                                                       model=model_obj)
+
+        return newdata, dt, missing
+
+    def _training_func_msgan(self, data: list, segments: list):
+        self._make_model_directory(directory=self._model_directory)
+
+        model_name = 'MSGAN.{}.model'.format(self._model_id)
+        model_filename = os.path.join(self._model_directory, model_name)
+        train_model = True
+
+        if not self._overwrite_existing_models and os.path.exists(model_filename):
+            train_model = False
+
+        if train_model:
+            # Assemble the source data for the GAN.
+            print('Gathering training data.')
+            vector = self._build_feature_vector_gan(data=data)
+            del data
+            print('Training model: {}'.format(model_name))
+            model = MinkMSGAN(seq_len=self._num_past_events)
+            # Now we can train the GAN with our corrected training data.
+            model.train_gan(raw_data=vector,
+                            filename=model_filename)
+        return
+
+    def _impute_func_msgan(self, data: list, segments: list) -> (list, datetime, list):
+        self._make_model_directory(directory=self._model_directory)
+        model_name = 'MSGAN.{}.model'.format(self._model_id)
+        model_filename = os.path.join(self._model_directory, model_name)
+
+        # Create our GAN model object.
+        model = MinkMSGAN(seq_len=self._num_past_events)
         model.load_gan(filename=model_filename)
 
         # This wrapper class will assist with maintaining the number of past events in the buffer

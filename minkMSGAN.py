@@ -12,7 +12,7 @@ from tensorflow.keras.losses import BinaryCrossentropy, MeanSquaredError
 from tensorflow.keras.optimizers import Adam
 
 
-class MinkGAN:
+class MinkMSGAN:
     def __init__(self, seq_len: int):
         self.seq_len = seq_len
         self.batch_size = 128
