@@ -672,16 +672,17 @@ class MinkMSGAN:
         generator, and adversarial models.
         Call the MTSS train routine.
         """
+        print('build_and_train_models()')
 
-        dataX, _, _ = google_data_loading(self.seq_len)
+        # dataX, _, _ = google_data_loading(self.seq_len)
         train_data = end_cond(train_data)
         print('train_data.shape', train_data.shape)
-        dataX = self.min_max(train_data=train_data)
-        print('dataX.shape', dataX.shape)
+        train_data = self.min_max(train_data=train_data)
+        print('dataX.shape', train_data.shape)
         # dataX = np.dstack((dataX, train_data[:, :, -1]))
-        print('dataX.shape', dataX.shape)
-        dataX = np.stack(dataX)
-        print('dataX.shape', dataX.shape)
+        print('dataX.shape', train_data.shape)
+        train_data = np.stack(train_data)
+        print('dataX.shape', train_data.shape)
         # for i in [0,1,2,3,20,21,50,300,1000,2000,3000,-1]:
         #     print(dataX[i][0])
         #     print(dataX[i][10])
@@ -689,9 +690,9 @@ class MinkMSGAN:
         #     print(dataX[i][-1])
         #     print('*'*50)
 
-        train_n = int(len(dataX) * .70)
-        X = dataX[:, :, :-1]
-        y = dataX[:, -1, -1]
+        train_n = int(len(train_data) * .70)
+        X = train_data[:, :, :-1]
+        y = train_data[:, -1, -1]
         print('X.shape', X.shape)
         print('y.shape', y.shape)
         x_train, y_train = X[:train_n, :, :], y[:train_n]
