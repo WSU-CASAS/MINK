@@ -699,9 +699,14 @@ def build_and_train_models(train_steps=2000):
 
     # number of labels
     num_labels = len(np.unique(y_train))
+    print('y_train.shape', y_train.shape)
+    print('y_test.shape', y_test.shape)
     # to one-hot vector
     y_train = to_categorical(y_train)
     y_test = to_categorical(y_test)
+    print('after to_categorical()')
+    print('y_train.shape', y_train.shape)
+    print('y_test.shape', y_test.shape)
 
     model_name = "MTSS-GAN"
     # network parameters

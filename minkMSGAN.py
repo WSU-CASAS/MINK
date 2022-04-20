@@ -276,7 +276,7 @@ class MinkMSGAN:
 
         x = Dense(self.shape[0] * self.shape[1])(x)
         x = Reshape((self.shape[0], self.shape[1]))(x)
-        x = GRU((self.shape[0] * self.shape[1]) / 2,
+        x = GRU(int((self.shape[0] * self.shape[1]) / 2),
                 return_sequences=False,
                 return_state=False,
                 unroll=True)(x)
@@ -317,7 +317,7 @@ class MinkMSGAN:
                 return_state=False,
                 unroll=True,
                 activation="relu")(x)
-        x = Reshape((ints, ints))(x)
+        x = Reshape((self.shape[0], self.shape[1]))(x)
         x = Conv1D(16, 3, 2, "same")(x)
         x = LeakyReLU(alpha=0.2)(x)
         x = Conv1D(32, 3, 2, "same")(x)
@@ -674,8 +674,12 @@ class MinkMSGAN:
         """
 
         dataX, _, _ = google_data_loading(self.seq_len)
-        dataX = train_data
-        # print('dataX.shape', dataX.shape)
+        train_data = end_cond(train_data)
+        print('train_data.shape', train_data.shape)
+        dataX = self.min_max(train_data=train_data)
+        print('dataX.shape', dataX.shape)
+        # dataX = np.dstack((dataX, train_data[:, :, -1]))
+        print('dataX.shape', dataX.shape)
         dataX = np.stack(dataX)
         print('dataX.shape', dataX.shape)
         # for i in [0,1,2,3,20,21,50,300,1000,2000,3000,-1]:
@@ -701,8 +705,11 @@ class MinkMSGAN:
         num_labels = len(np.unique(y_train))
         print('num_labels = ', num_labels)
         # to one-hot vector
-        y_train = to_categorical(y_train)
-        y_test = to_categorical(y_test)
+        y_train = to_categorical(y_train, num_classes=num_labels)
+        y_test = to_categorical(y_test, num_classes=num_labels)
+        print('after to_categorical()')
+        print('y_train.shape', y_train.shape)
+        print('y_test.shape', y_test.shape)
 
         model_name = "MTSS-GAN"
         # network parameters
@@ -854,15 +861,15 @@ class MinkMSGAN:
         # We have to train the scaler on the data in the original format because we will need to
         # apply it to the raw data passed in to generate the next sequence.
         # Normalize Data
-        print('raw_data shape', raw_data.shape)
-        self.scaler = MinMaxScaler()
-        scaled_data = self.scaler.fit_transform(raw_data).astype(np.float32)
-        print('scaled_data shape', scaled_data.shape)
+        # print('raw_data shape', raw_data.shape)
+        # self.scaler = MinMaxScaler()
+        # scaled_data = self.scaler.fit_transform(raw_data).astype(np.float32)
+        # print('scaled_data shape', scaled_data.shape)
 
         # Create rolling window sequences
         data = []
-        for i in range(len(raw_data) - (self.seq_len + 1)):
-            data.append(scaled_data[i:i + (self.seq_len + 1)])
+        for i in range(len(raw_data) - self.seq_len):
+            data.append(raw_data[i:i + self.seq_len])
         n_windows = len(data)
         print('len data = ', len(data))
         print('len data[0] = ', len(data[0]))
