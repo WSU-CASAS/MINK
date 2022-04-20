@@ -778,8 +778,12 @@ def build_and_train_models(train_steps=2000):
     encoder.summary()  # time series array to labels encoder (classifier)
 
     data = (x_train, y_train), (x_test, y_test)
-    print(x_train.shape)
-    print(y_train.shape)
+    print('X.shape', X.shape)
+    print('y.shape', y.shape)
+    print('x_train.shape', x_train.shape)
+    print('x_test.shape', x_test.shape)
+    print('y_train.shape', y_train.shape)
+    print('y_test.shape', y_test.shape)
 
     # this process would train enco, enc1, and encoder
     train_encoder(encoder, data, model_name=model_name)
@@ -848,8 +852,14 @@ from tensorflow.keras.models import load_model
 to highlight the process, and get the model archetecture to load the weights into..
 ..if you want to retrain the model add more steps than 10 and don't load the weights. 
 """
-steps = 2000  # original model used 2000 (choose a low number if you)
+steps = 200  # original model used 2000 (choose a low number if you)
 gen0, gen1 = build_and_train_models(train_steps=steps)
+
+import tensorflow as tf
+
+tf.keras.utils.plot_model(
+    gen1, to_file='model.png', show_shapes=True, show_layer_names=True,
+    rankdir='TB', expand_nested=False, dpi=96)
 
 # Comment and uncomment to load/save models
 gen0.save("gen0")

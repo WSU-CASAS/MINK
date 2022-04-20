@@ -133,36 +133,10 @@ def tSNE_Analysis(dataX, dataX_hat):
     plt.show()
 
 
-def labels(url):
-    stock = pd.read_csv(url)
-
-    rolling_20_mean = stock.Close.rolling(window=20).mean()[50:]
-    rolling_50_mean = stock.Close.rolling(window=50).mean()[50:]
-    rolling_50_std = stock.Close.rolling(window=50).std()[50:]
-
-    stock = stock.iloc[50:, :]
-
-    cond_0 = np.where((stock["Close"] < rolling_20_mean) & (stock["Close"] < rolling_50_mean) & (
-                rolling_50_std > rolling_50_std.median()), 1, 0)
-    cond_1 = np.where((stock["Close"] > rolling_20_mean) & (stock["Close"] < rolling_50_mean) & (
-                rolling_50_std > rolling_50_std.median()), 2, 0)
-    cond_2 = np.where((stock["Close"] > rolling_20_mean) & (stock["Close"] > rolling_50_mean) & (
-                rolling_50_std > rolling_50_std.median()), 3, 0)
-    cond_3 = np.where((stock["Close"] > rolling_20_mean) & (stock["Close"] > rolling_50_mean) & (
-                rolling_50_std < rolling_50_std.median()), 4, 0)
-    cond_4 = np.where((stock["Close"] < rolling_20_mean) & (stock["Close"] > rolling_50_mean) & (
-                rolling_50_std < rolling_50_std.median()), 5, 0)
-    cond_5 = np.where((stock["Close"] > rolling_20_mean) & (stock["Close"] < rolling_50_mean) & (
-                rolling_50_std < rolling_50_std.median()), 6, 0)
-
-    cond_all = cond_0 + cond_1 + cond_2 + cond_3 + cond_4 + cond_5
-    stock["Label"] = cond_all
-
-    return stock
-
-
 def end_cond(X_train):
-    vals = X_train[:, 23, 4] / X_train[:, 0, 4] - 1
+    print('end_cond()')
+    print('X_train.shape', X_train.shape)
+    vals = X_train[:, X_train.shape[1] - 1, 4] / X_train[:, 0, 4] - 1
 
     comb1 = np.where(vals < -.1, 0, 0)
     comb2 = np.where((vals >= -.1) & (vals <= -.05), 1, 0)
@@ -171,10 +145,13 @@ def end_cond(X_train):
     comb5 = np.where((vals > 0.05) & (vals <= 0.1), 4, 0)
     comb6 = np.where(vals > 0.1, 5, 0)
     cond_all = comb1 + comb2 + comb3 + comb4 + comb5 + comb6
+    print('cond_all.shape', cond_all.shape)
 
     print(np.unique(cond_all, return_counts=True))
-    arr = np.repeat(cond_all, 24, axis=0).reshape(len(cond_all), 24)
+    arr = np.repeat(cond_all, X_train.shape[1], axis=0).reshape(len(cond_all), X_train.shape[1])
+    print('arr.shape', arr.shape)
     X_train = np.dstack((X_train, arr))
+    print('X_train.shape', X_train.shape)
     return X_train
 
 
@@ -188,11 +165,13 @@ def MinMax(train_data):
 
 
 def google_data_loading(seq_length):
+    print('google_data_loading()')
     # Load Google Data
     x = np.loadtxt('https://github.com/firmai/tsgan/raw/master/alg/timegan/data/GOOGLE_BIG.csv',
                    delimiter=",", skiprows=1)
     # x = labels("https://github.com/firmai/tsgan/raw/master/alg/timegan/data/GOOGLE_BIG.csv")
     x = np.array(x)
+    print(x.shape)
 
     # Build dataset
     dataX = []
@@ -201,6 +180,8 @@ def google_data_loading(seq_length):
     for i in range(0, len(x) - seq_length):
         _x = x[i:i + seq_length]
         dataX.append(_x)
+    print('len dataX = ', len(dataX))
+    print('len dataX[0] = ', len(dataX[0]))
 
     # Mix Data (to make it similar to i.i.d)
     idx = np.random.permutation(len(dataX))
@@ -210,13 +191,18 @@ def google_data_loading(seq_length):
         outputX.append(dataX[idx[i]])
 
     X_train = np.stack(dataX)
+    print(X_train.shape)
 
     X_train = end_cond(X_train)  # Adding the conditions
 
+    print('before minmax')
+    print(X_train.shape)
     x_x, scaler = MinMax(X_train[:, :, :-1])
+    print('x_x shape', x_x.shape)
 
     # x_x = np.c_[x_x, X_train[:,:,-1]]
     x_x = np.dstack((x_x, X_train[:, :, -1]))
+    print('x_x shape', x_x.shape)
 
     return x_x, X_train, scaler
 
@@ -224,15 +210,13 @@ def google_data_loading(seq_length):
 class MinkMSGAN:
     def __init__(self, seq_len: int):
         self.seq_len = seq_len
-        self.seq_len = 24
-        self.batch_size = 128
-        self.train_steps = 100  # Set to 10000 for production
+        self.batch_size = 64  # Source had 64, our other GAN has 128
+        self.train_steps = 1000  # Set to 10000 for production
         self.columns = list(['yaw', 'pitch', 'roll', 'rotation_rate_x', 'rotation_rate_y',
                              'rotation_rate_z', 'user_acceleration_x', 'user_acceleration_y',
                              'user_acceleration_z', 'latitude', 'longitude', 'altitude', 'course',
                              'speed', 'horizontal_accuracy', 'vertical_accuracy'])
         self.n_seq = len(self.columns)
-        self.n_seq = 6
         self.shape = (self.seq_len, self.n_seq)
         self.gen0 = None
         self.gen1 = None
@@ -291,13 +275,16 @@ class MinkMSGAN:
 
         x = Dense(self.shape[0] * self.shape[1])(x)
         x = Reshape((self.shape[0], self.shape[1]))(x)
-        x = GRU(72, return_sequences=False, return_state=False, unroll=True)(x)
-        x = Reshape((int(self.shape[0] / 2), 6))(x)
+        x = GRU(self.shape[0] * self.shape[1],
+                return_sequences=False,
+                return_state=False,
+                unroll=True)(x)
+        x = Reshape((int(self.shape[0] / 2), self.shape[1] * 2))(x)
         x = Conv1D(128, 4, 1, "same")(x)
         x = BatchNormalization(momentum=0.8)(x)  # adjusting and scaling the activations
         x = ReLU()(x)
         x = UpSampling1D()(x)
-        x = Conv1D(6, 4, 1, "same")(x)
+        x = Conv1D(self.n_seq, 4, 1, "same")(x)
         x = BatchNormalization(momentum=0.8)(x)
 
         if activation is not None:
@@ -322,13 +309,14 @@ class MinkMSGAN:
             Model: Discriminator Model
         """
         ints = int(self.shape[0] / 2)
+        print('ints', ints)
         x = inputs
         x = GRU(self.shape[1] * self.shape[0],
                 return_sequences=False,
                 return_state=False,
                 unroll=True,
                 activation="relu")(x)
-        x = Reshape((ints, ints))(x)
+        x = Reshape((self.shape[1] * 2, int(self.shape[0] / 2)))(x)
         x = Conv1D(16, 3, 2, "same")(x)
         x = LeakyReLU(alpha=0.2)(x)
         x = Conv1D(32, 3, 2, "same")(x)
@@ -352,7 +340,7 @@ class MinkMSGAN:
 
         return Model(inputs, outputs, name='discriminator')
 
-    def build_encoder(self, inputs, num_labels=6, feature0_dim=6 * 24):
+    def build_encoder(self, inputs, num_labels=6, feature0_dim=None):
         """ Build the Classifier (Encoder) Model sub networks
         Two sub networks:
         1) Encoder0: time series array to feature0 (intermediate latent feature)
@@ -365,6 +353,9 @@ class MinkMSGAN:
         # Returns
             enc0, enc1 (Models): Description below
         """
+
+        if feature0_dim is None:
+            feature0_dim = self.shape[0] * self.shape[1]
 
         x, feature0 = inputs
 
@@ -386,7 +377,7 @@ class MinkMSGAN:
         # return both enc0 and enc1
         return enc0, enc1
 
-    def build_generator(self, latent_codes, feature0_dim=144):
+    def build_generator(self, latent_codes, feature0_dim=None):
         """Build Generator Model sub networks
         Two sub networks: 1) Class and noise to feature0
             (intermediate feature)
@@ -398,6 +389,9 @@ class MinkMSGAN:
         # Returns
             gen0, gen1 (Models): Description below
         """
+
+        if feature0_dim is None:
+            feature0_dim = self.shape[0] * self.shape[1]
 
         # Latent codes and network parameters
         labels, z0, z1, feature0 = latent_codes
@@ -601,7 +595,7 @@ class MinkMSGAN:
             tv_plot.update({'dis0_loss': dicta["dis0_loss"], 'dis1_loss': dicta["dis1_loss"],
                             'adv0_loss': dicta["adv0_loss"], 'enc1_acc': dicta["enc1_acc"],
                             'adv1_loss': dicta["adv1_loss"]})
-            # tv_plot.draw()
+            tv_plot.draw()
 
         # save the modelis after training generator0 & 1
         # the trained generator can be reloaded for
@@ -636,14 +630,12 @@ class MinkMSGAN:
 
     def train_encoder(self, model,
                       data,
-                      model_name="MTSS-GAN",
-                      batch_size=64):
+                      model_name="MTSS-GAN"):
         """ Train the Encoder Model (enc0 and enc1)
         # Arguments
             model (Model): Encoder
             data (tensor): Train and test data
             model_name (string): model name
-            batch_size (int): Train batch size
         """
 
         (x_train, y_train), (x_test, y_test) = data
@@ -654,39 +646,65 @@ class MinkMSGAN:
                   y_train,
                   validation_data=(x_test, y_test),
                   epochs=10,
-                  batch_size=batch_size)
+                  batch_size=self.batch_size)
 
         model.save(model_name + "-encoder.h5")
         score = model.evaluate(x_test,
                                y_test,
-                               batch_size=batch_size,
+                               batch_size=self.batch_size,
                                verbose=0)
         print("\nTest accuracy: {}%".format(100.0 * score[1]))
 
-    def build_and_train_models(self, train_steps=2000):
+    def min_max(self, train_data):
+        # Normalize the data.
+        self.scaler = MinMaxScaler()
+        num_instances, num_time_steps, num_features = train_data.shape
+        train_data = np.reshape(train_data, (-1, num_features))
+        # Train our scaler on the data.
+        # TODO: Will we need the fit_transform().astype(np.float32) here?
+        train_data = self.scaler.fit_transform(train_data)
+        train_data = np.reshape(train_data, (num_instances, num_time_steps, num_features))
+        return train_data
+
+    def build_and_train_models(self, train_data, train_steps=2000):
         """Load the dataset, build MTSS discriminator,
         generator, and adversarial models.
         Call the MTSS train routine.
         """
 
-        dataX, _, _ = google_data_loading(self.seq_len)
+        # dataX, _, _ = google_data_loading(self.seq_len)
+        dataX = train_data
+        # print('dataX.shape', dataX.shape)
         dataX = np.stack(dataX)
+        print('dataX.shape', dataX.shape)
+        # for i in [0,1,2,3,20,21,50,300,1000,2000,3000,-1]:
+        #     print(dataX[i][0])
+        #     print(dataX[i][10])
+        #     print(dataX[i][-10])
+        #     print(dataX[i][-1])
+        #     print('*'*50)
 
         train_n = int(len(dataX) * .70)
-        X = dataX[:, :, :-1]
-        y = dataX[:, -1, -1]
-        x_train, y_train = X[:train_n, :, :], y[:train_n]
-        x_test, y_test = X[train_n:, :, :], y[train_n:]
+        X = dataX[:, :-1, :]
+        y = dataX[:, -1, :]
+        print('X.shape', X.shape)
+        print('y.shape', y.shape)
+        x_train, y_train = X[:train_n, :, :], y[:train_n, :]
+        x_test, y_test = X[train_n:, :, :], y[train_n:, :]
+        print('x_train.shape', x_train.shape)
+        print('x_test.shape', x_test.shape)
+        print('y_train.shape', y_train.shape)
+        print('y_test.shape', y_test.shape)
 
         # number of labels
         num_labels = len(np.unique(y_train))
+        print('num_labels = ', num_labels)
         # to one-hot vector
-        y_train = to_categorical(y_train)
-        y_test = to_categorical(y_test)
+        # y_train = to_categorical(y_train)
+        # y_test = to_categorical(y_test)
 
         model_name = "MTSS-GAN"
         # network parameters
-        batch_size = 64
         # train_steps = 10
         # train_steps = 2000
 
@@ -736,6 +754,7 @@ class MinkMSGAN:
 
         # build generator models
         label_shape = (num_labels,)
+        label_shape = (self.n_seq,)
         feature0 = Input(shape=feature0_shape, name='feature0_input')
         labels = Input(shape=label_shape, name='labels')
         z0 = Input(shape=z_shape, name="z0_input")
@@ -750,7 +769,8 @@ class MinkMSGAN:
         # build encoder models
         input_shape = self.shape
         inputs = Input(shape=input_shape, name='encoder_input')
-        enc0, enc1 = self.build_encoder((inputs, feature0), num_labels)
+        enc0, enc1 = self.build_encoder(inputs=(inputs, feature0),
+                                        num_labels=self.n_seq)
         # Encoder0 or enc0: data to feature0
         enc0.summary()  # time series array to feature0 encoder
         # Encoder1 or enc1: feature0 to class labels
@@ -759,8 +779,12 @@ class MinkMSGAN:
         encoder.summary()  # time series array to labels encoder (classifier)
 
         data = (x_train, y_train), (x_test, y_test)
-        print(x_train.shape)
-        print(y_train.shape)
+        print('X.shape', X.shape)
+        print('y.shape', y.shape)
+        print('x_train.shape', x_train.shape)
+        print('x_test.shape', x_test.shape)
+        print('y_train.shape', y_train.shape)
+        print('y_test.shape', y_test.shape)
 
         # this process would train enco, enc1, and encoder
         self.train_encoder(encoder, data, model_name=model_name)
@@ -817,44 +841,44 @@ class MinkMSGAN:
 
         # train discriminator and adversarial networks
         models = (enc0, enc1, gen0, gen1, dis0, dis1, adv0, adv1)
-        params = (batch_size, train_steps, num_labels, z_dim, model_name)
+        params = (self.batch_size, train_steps, self.n_seq, z_dim, model_name)
         gen0, gen1 = self.train(models, data, params)
 
         return gen0, gen1
     
     def train_gan(self, raw_data: np.ndarray, filename: str):
         # The raw data will be a numpy ndarray in the same format as the ori_data that we
-        # load from the example data file, so will need to transform it, create the rolling
-        # window sequences, and tf.data.Dataset object to train the GAN on.
+        # load from the example data file, so will need to transform it and create the rolling
+        # window sequences to train the GAN on.
 
+        # We have to train the scaler on the data in the original format because we will need to
+        # apply it to the raw data passed in to generate the next sequence.
         # Normalize Data
+        print('raw_data shape', raw_data.shape)
         self.scaler = MinMaxScaler()
         scaled_data = self.scaler.fit_transform(raw_data).astype(np.float32)
-        
+        print('scaled_data shape', scaled_data.shape)
+
         # Create rolling window sequences
         data = []
-        for i in range(len(raw_data) - self.seq_len):
-            data.append(scaled_data[i:i + self.seq_len])
+        for i in range(len(raw_data) - (self.seq_len + 1)):
+            data.append(scaled_data[i:i + (self.seq_len + 1)])
         n_windows = len(data)
+        print('len data = ', len(data))
+        print('len data[0] = ', len(data[0]))
 
-        # Create tf.data.Dataset
-        real_series = (tf.data.Dataset
-                       .from_tensor_slices(data)
-                       .shuffle(buffer_size=n_windows)
-                       .batch(self.batch_size))
-        real_series_iter = iter(real_series.repeat())
-        
-        random_series = iter(tf.data.Dataset
-                             .from_generator(self._make_random_data, output_types=tf.float32)
-                             .batch(self.batch_size)
-                             .repeat())
-        
+        # Perform the data manipulation that mtss-gan google data example does.
+        train_data = np.stack(data)
+        print('train_data.shape', train_data.shape)
+        # train_data = np.dstack(())
+
         # TimeGAN Components
         # Network Parameters
         noise_dim = self.seq_len * self.n_seq
         hidden_dim = self.n_seq * 4
 
-        self.gen0, self.gen1 = self.build_and_train_models(train_steps=self.train_steps)
+        self.gen0, self.gen1 = self.build_and_train_models(train_data=train_data,
+                                                           train_steps=self.train_steps)
 
         # Save the GAN to disk
         self.save_gan(filename=filename)
@@ -865,8 +889,14 @@ class MinkMSGAN:
         # Save model
         self.gen0.save(os.path.join(filename, 'gen0'))
         self.gen0.save_weights(os.path.join(filename, 'gen0', 'weights'))
+        tf.keras.utils.plot_model(
+            self.gen0, to_file=os.path.join(filename, 'gen0', 'model.png'), show_shapes=True,
+            show_layer_names=True, rankdir='TB', expand_nested=False, dpi=96)
         self.gen1.save(os.path.join(filename, 'gen1'))
         self.gen1.save_weights(os.path.join(filename, 'gen1', 'weights'))
+        tf.keras.utils.plot_model(
+            self.gen1, to_file=os.path.join(filename, 'gen1', 'model.png'), show_shapes=True,
+            show_layer_names=True, rankdir='TB', expand_nested=False, dpi=96)
         # Save normalizer
         scaler_filename = os.path.join(filename, "scaler.save")
         joblib.dump(self.scaler, scaler_filename)
