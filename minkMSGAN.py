@@ -137,6 +137,7 @@ def end_cond(X_train):
     print('end_cond()')
     print('X_train.shape', X_train.shape)
     vals = X_train[:, X_train.shape[1] - 1, 4] / X_train[:, 0, 4] - 1
+    print('vals.shape', vals.shape)
 
     comb1 = np.where(vals < -.1, 0, 0)
     comb2 = np.where((vals >= -.1) & (vals <= -.05), 1, 0)
@@ -211,7 +212,7 @@ class MinkMSGAN:
     def __init__(self, seq_len: int):
         self.seq_len = seq_len
         self.batch_size = 64  # Source had 64, our other GAN has 128
-        self.train_steps = 1000  # Set to 10000 for production
+        self.train_steps = 100  # Set to 10000 for production
         self.columns = list(['yaw', 'pitch', 'roll', 'rotation_rate_x', 'rotation_rate_y',
                              'rotation_rate_z', 'user_acceleration_x', 'user_acceleration_y',
                              'user_acceleration_z', 'latitude', 'longitude', 'altitude', 'course',
@@ -275,11 +276,11 @@ class MinkMSGAN:
 
         x = Dense(self.shape[0] * self.shape[1])(x)
         x = Reshape((self.shape[0], self.shape[1]))(x)
-        x = GRU(self.shape[0] * self.shape[1],
+        x = GRU((self.shape[0] * self.shape[1]) / 2,
                 return_sequences=False,
                 return_state=False,
                 unroll=True)(x)
-        x = Reshape((int(self.shape[0] / 2), self.shape[1] * 2))(x)
+        x = Reshape((int(self.shape[0] / 2), self.shape[1]))(x)
         x = Conv1D(128, 4, 1, "same")(x)
         x = BatchNormalization(momentum=0.8)(x)  # adjusting and scaling the activations
         x = ReLU()(x)
@@ -316,7 +317,7 @@ class MinkMSGAN:
                 return_state=False,
                 unroll=True,
                 activation="relu")(x)
-        x = Reshape((self.shape[1] * 2, int(self.shape[0] / 2)))(x)
+        x = Reshape((ints, ints))(x)
         x = Conv1D(16, 3, 2, "same")(x)
         x = LeakyReLU(alpha=0.2)(x)
         x = Conv1D(32, 3, 2, "same")(x)
@@ -672,7 +673,7 @@ class MinkMSGAN:
         Call the MTSS train routine.
         """
 
-        # dataX, _, _ = google_data_loading(self.seq_len)
+        dataX, _, _ = google_data_loading(self.seq_len)
         dataX = train_data
         # print('dataX.shape', dataX.shape)
         dataX = np.stack(dataX)
@@ -685,12 +686,12 @@ class MinkMSGAN:
         #     print('*'*50)
 
         train_n = int(len(dataX) * .70)
-        X = dataX[:, :-1, :]
-        y = dataX[:, -1, :]
+        X = dataX[:, :, :-1]
+        y = dataX[:, -1, -1]
         print('X.shape', X.shape)
         print('y.shape', y.shape)
-        x_train, y_train = X[:train_n, :, :], y[:train_n, :]
-        x_test, y_test = X[train_n:, :, :], y[train_n:, :]
+        x_train, y_train = X[:train_n, :, :], y[:train_n]
+        x_test, y_test = X[train_n:, :, :], y[train_n:]
         print('x_train.shape', x_train.shape)
         print('x_test.shape', x_test.shape)
         print('y_train.shape', y_train.shape)
@@ -700,8 +701,8 @@ class MinkMSGAN:
         num_labels = len(np.unique(y_train))
         print('num_labels = ', num_labels)
         # to one-hot vector
-        # y_train = to_categorical(y_train)
-        # y_test = to_categorical(y_test)
+        y_train = to_categorical(y_train)
+        y_test = to_categorical(y_test)
 
         model_name = "MTSS-GAN"
         # network parameters
@@ -754,7 +755,6 @@ class MinkMSGAN:
 
         # build generator models
         label_shape = (num_labels,)
-        label_shape = (self.n_seq,)
         feature0 = Input(shape=feature0_shape, name='feature0_input')
         labels = Input(shape=label_shape, name='labels')
         z0 = Input(shape=z_shape, name="z0_input")
@@ -770,7 +770,7 @@ class MinkMSGAN:
         input_shape = self.shape
         inputs = Input(shape=input_shape, name='encoder_input')
         enc0, enc1 = self.build_encoder(inputs=(inputs, feature0),
-                                        num_labels=self.n_seq)
+                                        num_labels=num_labels)
         # Encoder0 or enc0: data to feature0
         enc0.summary()  # time series array to feature0 encoder
         # Encoder1 or enc1: feature0 to class labels
@@ -841,7 +841,7 @@ class MinkMSGAN:
 
         # train discriminator and adversarial networks
         models = (enc0, enc1, gen0, gen1, dis0, dis1, adv0, adv1)
-        params = (self.batch_size, train_steps, self.n_seq, z_dim, model_name)
+        params = (self.batch_size, train_steps, num_labels, z_dim, model_name)
         gen0, gen1 = self.train(models, data, params)
 
         return gen0, gen1
