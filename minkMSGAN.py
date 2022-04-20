@@ -683,6 +683,10 @@ class MinkMSGAN:
         print('dataX.shape', train_data.shape)
         train_data = np.stack(train_data)
         print('dataX.shape', train_data.shape)
+        remove_indexes = np.random.randint(0,
+                                           train_data.shape[0],
+                                           int(train_data.shape[0] * 0.8))
+        train_data = np.delete(train_data, remove_indexes, 0)
         # for i in [0,1,2,3,20,21,50,300,1000,2000,3000,-1]:
         #     print(dataX[i][0])
         #     print(dataX[i][10])
