@@ -595,7 +595,7 @@ class MinkMSGAN:
             tv_plot.update({'dis0_loss': dicta["dis0_loss"], 'dis1_loss': dicta["dis1_loss"],
                             'adv0_loss': dicta["adv0_loss"], 'enc1_acc': dicta["enc1_acc"],
                             'adv1_loss': dicta["adv1_loss"]})
-            tv_plot.draw()
+            # tv_plot.draw()
 
         # save the modelis after training generator0 & 1
         # the trained generator can be reloaded for
