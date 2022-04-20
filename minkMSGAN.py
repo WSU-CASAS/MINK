@@ -683,6 +683,10 @@ class MinkMSGAN:
         # dataX = np.dstack((dataX, train_data[:, :, -1]))
         print('dataX.shape', train_data.shape)
         train_data = np.stack(train_data)
+        train_data = da.from_array(train_data,
+                                   chunks=(self.batch_size,
+                                           self.shape[0],
+                                           self.shape[1] + 1))
         print('dataX.shape', train_data.shape)
         # for i in [0,1,2,3,20,21,50,300,1000,2000,3000,-1]:
         #     print(dataX[i][0])
