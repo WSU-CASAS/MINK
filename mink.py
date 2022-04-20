@@ -285,7 +285,7 @@ class MINK:
             self._impute_wavenet: self._impute_func_wavenet,
             self._impute_knn: self._impute_func_knn,
             self._impute_gan: self._impute_func_gan,
-            self._impute_msgan: self._impute_msgan})
+            self._impute_msgan: self._impute_func_msgan})
         self._impute_methods = list(self._impute_functions.keys())
         self._impute_methods.sort()
         self._config_method = None
@@ -658,7 +658,7 @@ class MINK:
         end_stamp = data[0][0]
         stamp_delta = copy.deepcopy(self.event_spacing)
         while current_stamp <= data[-1][0] and data_index < data_length:
-            print(str(current_stamp))
+            # print(str(current_stamp))
             newpoint = list()
             if waiting_for_gap:
                 # We are waiting for a gap, which means there is valid data to use and we should
@@ -682,6 +682,7 @@ class MINK:
                 # Append the populated newpoint to the newdata array.
                 newdata.append(newpoint)
             else:
+                print(str(current_stamp))
                 # Start populating the newpoint with the current_stamp.
                 newpoint.append(copy.deepcopy(current_stamp))
                 if current_stamp < end_stamp:

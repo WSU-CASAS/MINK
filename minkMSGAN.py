@@ -920,25 +920,82 @@ class MinkMSGAN:
         scaler_filename = os.path.join(filename, "scaler.save")
         self.scaler = joblib.load(scaler_filename)
         return
+
+    def create_latent(self, dataX, batch_n=1, equal_batch=True, class_dim=None, class_label=None,
+                      z_dim=50, z_val=4, classed=True, noise="Normal"):
+        if class_dim is None:
+            class_dim = self.n_seq
+        if classed:
+            new = dataX[dataX[:, :, self.n_seq] == class_label]
+            new = np.reshape(new, (int(len(new) / self.seq_len), self.seq_len, 7))[:, :, :-1]
+            batch_num = new.shape[0]
+            if not equal_batch:
+                batch_num = batch_n
+            print(batch_n)
+            noise_class = np.zeros((batch_num, class_dim))
+            noise_class[:, class_label] = 1
+        else:
+            noise_class = np.eye(class_dim)[np.random.choice(class_dim, batch_n)]
+            new = dataX
+            batch_num = batch_n
+        if not equal_batch:
+            batch_num = batch_n
+        if noise == "Normal":
+            z0 = np.random.normal(scale=0.5, size=[batch_num, z_dim])
+            z1 = np.random.normal(scale=0.5, size=[batch_num, z_dim])
+        elif noise == "z0_4":
+            z0 = np.full((batch_num, z_dim), z_val)
+            z1 = np.random.normal(scale=0.5, size=[batch_num, z_dim])
+        elif noise == "z1_4":
+            z0 = np.random.normal(scale=0.5, size=[batch_num, z_dim])
+            z1 = np.full((batch_num, z_dim), z_val)
+
+        return new, noise_class, z0, z1
         
     def get_next_sequence(self, cur_sequence: np.ndarray) -> np.ndarray:
         # Given the current sequence of shape (seq_len,  n_seq) representing the currently
         # observed sequence, provide the next sequence of the same shape.
-        #next_sequence = np.zeros((self.seq_len, self.n_seq))
+        print('cur_sequence[0]', cur_sequence[0])
+        print('cur_sequence.shape', cur_sequence.shape)
+        cur_sequence = np.stack([cur_sequence])
+        print('cur_sequence.shape', cur_sequence.shape)
+        cur_sequence = end_cond(cur_sequence)
+        data_x = []
         if self.use_random_z:
             # Use random data as input
-            random_data = np.random.uniform(low=0, high=1, size=(self.seq_len, self.n_seq))
-            Z_ = random_data[None,...]
+            data_x = np.random.uniform(low=0, high=1, size=(1, self.seq_len, self.n_seq))
         else:
             # Use given sequence as input (normalized)
-            scaled_data = self.scaler.transform(cur_sequence).astype(np.float32)
-            Z_ = scaled_data[None,...]
+            num_instances, num_time_steps, num_features = cur_sequence.shape
+            cur_sequence = np.reshape(cur_sequence, (-1, num_features))
+            cur_sequence = self.scaler.transform(cur_sequence)
+            data_x = np.reshape(cur_sequence, (num_instances, num_time_steps, num_features))
+        print('data_x.shape', data_x.shape)
         # Generate synthetic sequence
-        generated_data = [self.synthetic_data(Z_)] # list of only one window
-        generated_data = np.array(np.vstack(generated_data))
+        new, noise_class, z0, z1 = self.create_latent(
+            dataX=data_x,
+            class_label=None,
+            class_dim=6,
+            classed=False,
+            noise='Normal')
+        feature0 = self.gen0.predict([noise_class, z1])
+        generated_data = self.gen1.predict([feature0, z0])
+        print('generated_data.shape', generated_data.shape)
+        print('generated_data[0][0]', generated_data[0][0])
+        # generated_data = [self.synthetic_data(Z_)] # list of only one window
+        # generated_data = np.array(np.vstack(generated_data))
         # Rescale
-        generated_data = (self.scaler.inverse_transform(generated_data.reshape(-1, self.n_seq))
-                          .reshape(-1, self.seq_len, self.n_seq))
+        generated_data = end_cond(generated_data)
+        num_instances, num_time_steps, num_features = generated_data.shape
+        generated_data = np.reshape(generated_data, (-1, num_features))
+        generated_data = self.scaler.inverse_transform(generated_data)
+        generated_data = np.reshape(generated_data, (num_instances, num_time_steps, num_features))
+        print('generated_data.shape', generated_data.shape)
+        print('generated_data[0][0]', generated_data[0][0])
+        generated_data = generated_data[:, :, :-1]
+        # generated_data = (self.scaler.inverse_transform(generated_data.reshape(-1, self.n_seq))
+        #                   .reshape(-1, self.seq_len, self.n_seq))
+        print('generated_data.shape', generated_data.shape)
         next_sequence = generated_data[0]
         return next_sequence
 
