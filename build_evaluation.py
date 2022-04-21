@@ -1,4 +1,4 @@
-methods = ['field_mean', 'carry_forward', 'carry_backward', 'carry_average', 'zero_fill', 'regression_sgd', 'regression_rand_forest', 'gan', 'knn']
+methods = ['field_mean', 'carry_forward', 'carry_backward', 'carry_average', 'zero_fill', 'regression_sgd', 'regression_rand_forest', 'gan', 'knn', 'ms_gan']
 sites = ['sttr001', 'sttr006', 'sttr008', 'sttr009', 'sttr010']
 missing = ['10', '20', '30']
 gaps = ['10', '600', '36000']
