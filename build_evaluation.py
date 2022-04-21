@@ -13,6 +13,7 @@ for m in methods:
                     msg += '--fulldata=data/{}.test '.format(s)
                     msg += '--ignorefile=data/{}.test.ignore '.format(s)
                     msg += '--spacing=0.1 '
-                    msg += '--model-id={}.train '.format(s)
-                    msg += '2>&1 | tee -a log/{}.{}.{}.{}.{}.eval'.format(m, s, p, g, i)
+                    msg += '--seqlen=64 '
+                    msg += '--model-id={}.20.train '.format(s)
+                    msg += '2>&1 | tee -a log/{}.{}.20.{}.{}.{}.eval'.format(m, s, p, g, i)
                     print(msg)
