@@ -901,14 +901,14 @@ class MinkMSGAN:
         # Save model
         self.gen0.save(os.path.join(filename, 'gen0'))
         self.gen0.save_weights(os.path.join(filename, 'gen0', 'weights'))
-        tf.keras.utils.plot_model(
-            self.gen0, to_file=os.path.join(filename, 'gen0', 'model.png'), show_shapes=True,
-            show_layer_names=True, rankdir='TB', expand_nested=False, dpi=96)
+        # tf.keras.utils.plot_model(
+        #     self.gen0, to_file=os.path.join(filename, 'gen0', 'model.png'), show_shapes=True,
+        #     show_layer_names=True, rankdir='TB', expand_nested=False, dpi=96)
         self.gen1.save(os.path.join(filename, 'gen1'))
         self.gen1.save_weights(os.path.join(filename, 'gen1', 'weights'))
-        tf.keras.utils.plot_model(
-            self.gen1, to_file=os.path.join(filename, 'gen1', 'model.png'), show_shapes=True,
-            show_layer_names=True, rankdir='TB', expand_nested=False, dpi=96)
+        # tf.keras.utils.plot_model(
+        #     self.gen1, to_file=os.path.join(filename, 'gen1', 'model.png'), show_shapes=True,
+        #     show_layer_names=True, rankdir='TB', expand_nested=False, dpi=96)
         # Save normalizer
         scaler_filename = os.path.join(filename, "scaler.save")
         joblib.dump(self.scaler, scaler_filename)
