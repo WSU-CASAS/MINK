@@ -682,7 +682,7 @@ class MINK:
                 # Append the populated newpoint to the newdata array.
                 newdata.append(newpoint)
             else:
-                print(str(current_stamp))
+                print(str(datetime.now()), str(current_stamp))
                 # Start populating the newpoint with the current_stamp.
                 newpoint.append(copy.deepcopy(current_stamp))
                 if current_stamp < end_stamp:

@@ -960,10 +960,10 @@ class MinkMSGAN:
     def get_next_sequence(self, cur_sequence: np.ndarray) -> np.ndarray:
         # Given the current sequence of shape (seq_len,  n_seq) representing the currently
         # observed sequence, provide the next sequence of the same shape.
-        print('cur_sequence[0]', cur_sequence[0])
-        print('cur_sequence.shape', cur_sequence.shape)
+        # print('cur_sequence[0]', cur_sequence[0])
+        # print('cur_sequence.shape', cur_sequence.shape)
         cur_sequence = np.stack([cur_sequence])
-        print('cur_sequence.shape', cur_sequence.shape)
+        # print('cur_sequence.shape', cur_sequence.shape)
         cur_sequence = end_cond(cur_sequence)
         data_x = []
         if self.use_random_z:
@@ -975,7 +975,7 @@ class MinkMSGAN:
             cur_sequence = np.reshape(cur_sequence, (-1, num_features))
             cur_sequence = self.scaler.transform(cur_sequence)
             data_x = np.reshape(cur_sequence, (num_instances, num_time_steps, num_features))
-        print('data_x.shape', data_x.shape)
+        # print('data_x.shape', data_x.shape)
         # Generate synthetic sequence
         new, noise_class, z0, z1 = self.create_latent(
             dataX=data_x,
@@ -985,8 +985,8 @@ class MinkMSGAN:
             noise='Normal')
         feature0 = self.gen0.predict([noise_class, z1])
         generated_data = self.gen1.predict([feature0, z0])
-        print('generated_data.shape', generated_data.shape)
-        print('generated_data[0][0]', generated_data[0][0])
+        # print('generated_data.shape', generated_data.shape)
+        # print('generated_data[0][0]', generated_data[0][0])
         # generated_data = [self.synthetic_data(Z_)] # list of only one window
         # generated_data = np.array(np.vstack(generated_data))
         # Rescale
@@ -995,12 +995,12 @@ class MinkMSGAN:
         generated_data = np.reshape(generated_data, (-1, num_features))
         generated_data = self.scaler.inverse_transform(generated_data)
         generated_data = np.reshape(generated_data, (num_instances, num_time_steps, num_features))
-        print('generated_data.shape', generated_data.shape)
-        print('generated_data[0][0]', generated_data[0][0])
+        # print('generated_data.shape', generated_data.shape)
+        # print('generated_data[0][0]', generated_data[0][0])
         generated_data = generated_data[:, :, :-1]
         # generated_data = (self.scaler.inverse_transform(generated_data.reshape(-1, self.n_seq))
         #                   .reshape(-1, self.seq_len, self.n_seq))
-        print('generated_data.shape', generated_data.shape)
+        # print('generated_data.shape', generated_data.shape)
         next_sequence = generated_data[0]
         return next_sequence
 
