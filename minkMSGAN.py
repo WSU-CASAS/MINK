@@ -134,10 +134,10 @@ def tSNE_Analysis(dataX, dataX_hat):
 
 
 def end_cond(X_train):
-    print('end_cond()')
-    print('X_train.shape', X_train.shape)
+    # print('end_cond()')
+    # print('X_train.shape', X_train.shape)
     vals = X_train[:, X_train.shape[1] - 1, 4] / X_train[:, 0, 4] - 1
-    print('vals.shape', vals.shape)
+    # print('vals.shape', vals.shape)
 
     comb1 = np.where(vals < -.1, 0, 0)
     comb2 = np.where((vals >= -.1) & (vals <= -.05), 1, 0)
@@ -146,13 +146,13 @@ def end_cond(X_train):
     comb5 = np.where((vals > 0.05) & (vals <= 0.1), 4, 0)
     comb6 = np.where(vals > 0.1, 5, 0)
     cond_all = comb1 + comb2 + comb3 + comb4 + comb5 + comb6
-    print('cond_all.shape', cond_all.shape)
+    # print('cond_all.shape', cond_all.shape)
 
-    print(np.unique(cond_all, return_counts=True))
+    # print(np.unique(cond_all, return_counts=True))
     arr = np.repeat(cond_all, X_train.shape[1], axis=0).reshape(len(cond_all), X_train.shape[1])
-    print('arr.shape', arr.shape)
+    # print('arr.shape', arr.shape)
     X_train = np.dstack((X_train, arr))
-    print('X_train.shape', X_train.shape)
+    # print('X_train.shape', X_train.shape)
     return X_train
 
 
@@ -683,16 +683,11 @@ class MinkMSGAN:
         print('dataX.shape', train_data.shape)
         train_data = np.stack(train_data)
         print('dataX.shape', train_data.shape)
-        remove_indexes = np.random.randint(0,
-                                           train_data.shape[0],
-                                           int(train_data.shape[0] * 0.8))
-        train_data = np.delete(train_data, remove_indexes, 0)
-        # for i in [0,1,2,3,20,21,50,300,1000,2000,3000,-1]:
-        #     print(dataX[i][0])
-        #     print(dataX[i][10])
-        #     print(dataX[i][-10])
-        #     print(dataX[i][-1])
-        #     print('*'*50)
+        # Delete 20% of the data by making a copy (not efficient).
+        # remove_indexes = np.random.randint(0,
+        #                                    train_data.shape[0],
+        #                                    int(train_data.shape[0] * 0.8))
+        # train_data = np.delete(train_data, remove_indexes, 0)
 
         train_n = int(len(train_data) * .70)
         X = train_data[:, :, :-1]
@@ -872,9 +867,14 @@ class MinkMSGAN:
         # print('scaled_data shape', scaled_data.shape)
 
         # Create rolling window sequences
+        # We will only use 20% of the data for now.
+        ignore_indexes = np.random.randint(0,
+                                           raw_data.shape[0],
+                                           int(raw_data.shape[0] * 0.8))
         data = []
         for i in range(len(raw_data) - self.seq_len):
-            data.append(raw_data[i:i + self.seq_len])
+            if i not in ignore_indexes:
+                data.append(raw_data[i:i + self.seq_len])
         n_windows = len(data)
         print('len data = ', len(data))
         print('len data[0] = ', len(data[0]))
