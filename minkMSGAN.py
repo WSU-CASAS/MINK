@@ -871,7 +871,7 @@ class MinkMSGAN:
         # We will only use 20% of the data for now.
         use_indexes = np.random.randint(0,
                                         raw_data.shape[0] - self.seq_len,
-                                        int((raw_data.shape[0] - self.seq_len) * 0.8))
+                                        int((raw_data.shape[0] - self.seq_len) * 0.2))
         data = []
         for i in use_indexes:
             data.append(raw_data[i:i + self.seq_len])
@@ -883,6 +883,7 @@ class MinkMSGAN:
         train_data = np.stack(data)
         print('train_data.shape', train_data.shape)
         # train_data = np.dstack(())
+        del data
 
         # TimeGAN Components
         # Network Parameters
