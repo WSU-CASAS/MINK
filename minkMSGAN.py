@@ -867,14 +867,14 @@ class MinkMSGAN:
         # print('scaled_data shape', scaled_data.shape)
 
         # Create rolling window sequences
+        print('Building sliding windows.')
         # We will only use 20% of the data for now.
-        ignore_indexes = np.random.randint(0,
-                                           raw_data.shape[0],
-                                           int(raw_data.shape[0] * 0.8))
+        use_indexes = np.random.randint(0,
+                                        raw_data.shape[0] - self.seq_len,
+                                        int((raw_data.shape[0] - self.seq_len) * 0.8))
         data = []
-        for i in range(len(raw_data) - self.seq_len):
-            if i not in ignore_indexes:
-                data.append(raw_data[i:i + self.seq_len])
+        for i in use_indexes:
+            data.append(raw_data[i:i + self.seq_len])
         n_windows = len(data)
         print('len data = ', len(data))
         print('len data[0] = ', len(data[0]))
