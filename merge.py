@@ -31,7 +31,7 @@ def write_data(filename: str, out_data: list, out_data_fields: OrderedDict):
     return
 
 
-methods = list(['carry_forward', 'field_mean', 'gan'])
+methods = list(['carry_forward', 'field_mean', 'ms_gan'])
 files = list(['sttr001', 'sttr002', 'sttr003', 'sttr004', 'sttr006', 'sttr007', 'sttr008',
               'sttr009', 'sttr010', 'sttr011', 'sttr012', 'sttr013', 'sttr014', 'sttr015',
               'sttr016', 'sttr101', 'sttr102', 'sttr103', 'sttr104', 'sttr105', 'sttr106',
@@ -39,7 +39,7 @@ files = list(['sttr001', 'sttr002', 'sttr003', 'sttr004', 'sttr006', 'sttr007', 
               'sttr114'])
 output_files = list()
 for i in range(len(files)):
-    files[i] = '../full-data/{}.sampled.csv'.format(files[i])
+    files[i] = '../../full-data/{}.sampled.csv'.format(files[i])
     output_files.append('{}.OUTPUT.imputed.csv'.format(files[i]))
 type_files = dict()
 for method in methods:
@@ -76,7 +76,7 @@ for file_index in range(len(files)):
         print('\t{}\treading {}'.format(str(datetime.now()), type_files[method][file_index]))
         data[method], data_fields = read_data(type_files[method][file_index])
     # Merge the values into a single data list, we will use the GAN as the base.
-    data['out'] = data['gan']
+    data['out'] = data['ms_gan']
     print('\t{}\tmerging data...'.format(str(datetime.now())))
     for i in range(len(data['out'])):
         for j, field_name in enumerate(data_fields.values()):
